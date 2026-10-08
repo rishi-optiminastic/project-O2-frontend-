@@ -11,9 +11,12 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, type VendorReport, type Client } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { useMonth, withMonth } from "@/lib/month";
 
 export default function ReportsPage() {
-  const { data, loading, refetch } = useApi<VendorReport[]>("/reports");
+  const [month] = useMonth();
+  const { data, loading, refetch } = useApi<VendorReport[]>(withMonth("/reports", month));
   const { data: clients } = useApi<Client[]>("/clients");
   const { hasRole } = useAuth();
   const [open, setOpen] = useState(false);
@@ -43,9 +46,12 @@ export default function ReportsPage() {
           title="Reports"
           description="Receive vendor reports, review internally, and deliver to clients."
           action={
-            <Button size="sm" magnetic={false} onClick={() => setOpen(true)}>
-              <Plus className="h-4 w-4" /> Upload report
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <MonthFilter />
+              <Button size="sm" magnetic={false} onClick={() => setOpen(true)}>
+                <Plus className="h-4 w-4" /> Upload report
+              </Button>
+            </div>
           }
         />
 

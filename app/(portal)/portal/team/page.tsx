@@ -14,7 +14,7 @@ import {
   inputClass,
   StatusPill,
 } from "@/components/portal/ui";
-import { Modal } from "@/components/portal/Modal";
+import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Select } from "@/components/portal/Select";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
@@ -28,7 +28,7 @@ import {
   type Invitation,
   type Role,
 } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
+import { formatDate, timeAgo } from "@/lib/utils";
 
 // Roles the CEO may assign when inviting (the CEO seat is not re-issuable).
 const INVITE_ROLES: Role[] = ["CFO", "FINANCE_MANAGER", "FINANCE_EXECUTIVE"];
@@ -58,7 +58,7 @@ export default function TeamPage() {
         <div>
           <h2 className="mb-4 text-lg font-light tracking-tight">Members</h2>
           {members && members.length > 0 ? (
-            <Table head={["Name", "Email", "Role", "Joined"]}>
+            <Table head={["Name", "Email", "Role", "Joined", "Login status"]}>
               {members.map((m) => (
                 <Row key={m.id}>
                   <Cell className="font-medium">{m.name}</Cell>
@@ -67,6 +67,9 @@ export default function TeamPage() {
                     <StatusPill status={ROLE_LABELS[m.role]} />
                   </Cell>
                   <Cell className="text-ink-40">{formatDate(m.created_at)}</Cell>
+                  <Cell>
+                    <LoginStatus lastLoginAt={m.last_login_at} />
+                  </Cell>
                 </Row>
               ))}
             </Table>
@@ -115,6 +118,24 @@ export default function TeamPage() {
   );
 }
 
+/** Green "signed in" indicator with last-active time, or a neutral "not signed in yet". */
+function LoginStatus({ lastLoginAt }: { lastLoginAt?: string | null }) {
+  if (lastLoginAt) {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        <span className="text-xs text-foreground/80">Active · {timeAgo(lastLoginAt)}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-2 text-ink-40">
+      <span className="h-2 w-2 rounded-full bg-ink-20" />
+      <span className="text-xs">Not signed in yet</span>
+    </span>
+  );
+}
+
 function PendingInviteRow({ invite, onChanged }: { invite: Invitation; onChanged: () => void }) {
   const [busy, setBusy] = useState<null | "resend" | "revoke">(null);
   const [copied, setCopied] = useState(false);
@@ -155,7 +176,12 @@ function PendingInviteRow({ invite, onChanged }: { invite: Invitation; onChanged
     <Panel className="!rounded-2xl">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium">{invite.name}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{invite.name}</p>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Awaiting login
+            </span>
+          </div>
           <p className="truncate text-xs text-ink-40">
             {invite.email} · {ROLE_LABELS[invite.role]}
           </p>
@@ -260,14 +286,14 @@ function InviteMember({
           </Field>
         </div>
         {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
-        <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
+        <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button type="submit" magnetic={false} disabled={saving}>
             <Mail className="h-4 w-4" /> {saving ? "Sending…" : "Send invitation"}
           </Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );

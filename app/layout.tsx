@@ -49,9 +49,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`}>
-      <body className="min-h-full">
-        <div className="ambient" aria-hidden />
-        <div className="grain-fixed" aria-hidden />
+      <body className="min-h-full print:bg-white">
+        <div className="ambient print:hidden" aria-hidden />
+        <div className="grain-fixed print:hidden" aria-hidden />
         <MotionProvider>
           <MagneticCursor />
           <SmoothScroll>{children}</SmoothScroll>

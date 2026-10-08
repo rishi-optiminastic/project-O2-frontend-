@@ -8,9 +8,12 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type BankStatement, type BankStatementDetail } from "@/lib/api";
 import { formatINR, formatDate } from "@/lib/utils";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { useMonth, withMonth } from "@/lib/month";
 
 export default function VerificationPage() {
-  const { data, loading, refetch } = useApi<BankStatement[]>("/verification/statements");
+  const [month] = useMonth();
+  const { data, loading, refetch } = useApi<BankStatement[]>(withMonth("/verification/statements", month));
   const [active, setActive] = useState<BankStatementDetail | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +45,11 @@ export default function VerificationPage() {
   return (
     <PortalShell>
       <div className="flex flex-col gap-8">
-        <PageHeading title="Verification" description="Upload bank statements and auto-match transactions to system records." />
+        <PageHeading
+          title="Verification"
+          description="Upload bank statements and auto-match transactions to system records."
+          action={<MonthFilter />}
+        />
 
         <Panel>
           <h2 className="mb-4 text-lg font-light tracking-tight">Upload statement</h2>
@@ -54,7 +61,7 @@ export default function VerificationPage() {
               <input name="account_number" className={inputClass} />
             </Field>
             <Field label="File (CSV / Excel / PDF)">
-              <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" required className={inputClass + " py-2.5"} />
+              <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" required className={inputClass + " py-1.5 text-secondary file:mr-3 file:h-8 file:cursor-pointer file:rounded-full file:border-0 file:bg-foreground file:px-4 file:text-xs file:font-medium file:text-background"} />
             </Field>
             {error && <p className="sm:col-span-3 text-sm text-foreground/80">⚠ {error}</p>}
             <div className="sm:col-span-3 flex justify-end">

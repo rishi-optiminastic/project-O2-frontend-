@@ -9,8 +9,10 @@ import {
   LayoutDashboard,
   Users,
   FileText,
+  FolderKanban,
   Truck,
   Handshake,
+  Layers,
   Receipt,
   FileBarChart,
   ShieldCheck,
@@ -18,7 +20,6 @@ import {
   ScrollText,
   UserPlus,
   LogOut,
-  Bell,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -36,6 +37,7 @@ const navGroups = [
     items: [
       { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { href: "/portal/invoices", label: "Invoices", icon: FileText },
+      { href: "/portal/projects", label: "Projects", icon: FolderKanban },
       { href: "/portal/taxation", label: "Taxation", icon: Receipt },
       { href: "/portal/reports", label: "Reports", icon: FileBarChart },
     ],
@@ -46,6 +48,7 @@ const navGroups = [
       { href: "/portal/agents", label: "Agents", icon: Handshake },
       { href: "/portal/clients", label: "Clients", icon: Users },
       { href: "/portal/vendors", label: "Vendors", icon: Truck },
+      { href: "/portal/services", label: "Services", icon: Layers },
     ],
   },
   {
@@ -58,6 +61,16 @@ const navGroups = [
     ],
   },
 ];
+
+function initials(name: string): string {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+}
 
 export function PortalShell({ children }: { children: ReactNode }) {
   const { user, loading, logout } = useAuth();
@@ -104,7 +117,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const visibleItems = groups.flatMap((g) => g.items);
 
   return (
-    <div className="relative min-h-screen">
+    <div className="relative min-h-screen overflow-x-clip">
       {/* Ambient orbs — same motif as the marketing site */}
       <FloatingOrb size={520} variant="ambient" speed={22} opacity={0.25} className="-right-40 top-10" parallax={30} />
       <FloatingOrb size={360} variant="ambient" speed={18} opacity={0.2} className="-left-32 bottom-0" />
@@ -121,6 +134,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           <button
             onClick={toggleCollapsed}
             title={collapsed ? "Expand" : "Collapse"}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
             className="absolute -right-3 top-8 z-30 flex h-6 w-6 items-center justify-center rounded-full border border-white/55 bg-white text-ink-40 shadow-[0_4px_12px_-6px_rgba(17,17,17,0.35)] transition-colors hover:text-foreground"
           >
             {collapsed ? <PanelLeftOpen className="h-3.5 w-3.5" /> : <PanelLeftClose className="h-3.5 w-3.5" />}
@@ -186,30 +200,27 @@ export function PortalShell({ children }: { children: ReactNode }) {
           {/* Desktop top bar */}
           <header className="sticky top-0 z-20 hidden items-center justify-end gap-3 border-b border-white/50 bg-white/35 px-10 py-4 backdrop-blur-2xl lg:flex">
             <GlobalSearch />
-            <button className="flex h-10 w-10 items-center justify-center rounded-full border border-white/60 bg-white/40 text-secondary transition-colors hover:text-foreground">
-              <Bell className="h-4 w-4" strokeWidth={1.5} />
-            </button>
-
             {/* User — avatar only; opens a dropdown with name + sign out */}
             <div className="ml-1 border-l border-white/55 pl-4">
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger asChild>
                   <button
                     title={user.name}
+                    aria-label={`Account menu for ${user.name}`}
                     className="metallic flex h-10 w-10 items-center justify-center rounded-full text-xs font-medium text-foreground/70 outline-none transition-transform hover:scale-105 focus-visible:ring-2 focus-visible:ring-foreground/30"
                   >
-                    {user.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                    {initials(user.name)}
                   </button>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Portal>
                   <DropdownMenu.Content
                     align="end"
                     sideOffset={10}
-                    className="glass-strong z-[120] w-60 rounded-2xl p-2 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]"
+                    className="popover-surface z-[120] w-60 rounded-2xl p-2 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]"
                   >
                     <div className="flex items-center gap-3 px-3 py-2.5">
                       <span className="metallic flex h-9 w-9 items-center justify-center rounded-full text-xs font-medium text-foreground/70">
-                        {user.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                        {initials(user.name)}
                       </span>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium leading-tight">{user.name}</p>
@@ -217,7 +228,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
                       </div>
                     </div>
                     <p className="truncate px-3 pb-2 text-[11px] text-ink-40">{user.email}</p>
-                    <DropdownMenu.Separator className="my-1 h-px bg-white/55" />
+                    <DropdownMenu.Separator className="my-1 h-px bg-line" />
                     <DropdownMenu.Item
                       onSelect={logout}
                       className="flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2.5 text-sm text-foreground outline-none transition-colors data-[highlighted]:bg-foreground/[0.05]"

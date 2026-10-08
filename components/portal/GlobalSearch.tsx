@@ -66,7 +66,7 @@ export function GlobalSearch() {
         ...invoices.slice(0, 5).map((i) => ({
           type: "invoice" as const,
           id: i.id,
-          title: i.invoice_number,
+          title: i.display_number,
           subtitle: `${formatINR(i.total_amount)} · ${i.status}`,
           href: `/portal/invoices/${i.id}`,
         })),
@@ -131,7 +131,8 @@ export function GlobalSearch() {
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder="Search clients, invoices, vendors…"
+          placeholder="Search everything…"
+          aria-label="Search clients, invoices and vendors"
           className="w-full bg-transparent text-foreground outline-none placeholder:text-ink-40"
         />
         <kbd className="hidden shrink-0 rounded border border-line bg-white/70 px-1.5 text-[10px] text-ink-40 sm:block">
@@ -140,7 +141,7 @@ export function GlobalSearch() {
       </div>
 
       {open && q.trim().length >= 2 && (
-        <div className="glass-strong absolute right-0 top-12 z-[120] w-80 overflow-hidden rounded-2xl p-2 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]">
+        <div className="popover-surface absolute right-0 top-12 z-[120] w-80 overflow-hidden rounded-2xl p-2 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]">
           {loading && <p className="px-3 py-3 text-sm text-ink-40">Searching…</p>}
           {!loading && hits.length === 0 && (
             <p className="px-3 py-3 text-sm text-ink-40">No matches for “{q}”.</p>

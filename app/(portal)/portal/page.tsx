@@ -6,54 +6,30 @@ import { motion } from "framer-motion";
 import { ArrowUpRight, MoreHorizontal } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { MetricCard, Panel, StatusPill, Table, Row, Cell, Empty } from "@/components/portal/ui";
-import { PixelBarChart, type PixelDatum } from "@/components/charts/PixelBarChart";
+import { PixelBarChart } from "@/components/charts/PixelBarChart";
 import { AnimatedNumber } from "@/components/portal/AnimatedNumber";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { formatINR } from "@/lib/utils";
 import { fadeUp, stagger } from "@/lib/motion";
-import type { DashboardSummary } from "@/lib/api";
+import type { DashboardSummary, CashflowPoint } from "@/lib/api";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { useMonth, withMonth } from "@/lib/month";
 
 const item = fadeUp;
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const RANGES = ["Weekly", "Monthly", "Yearly"] as const;
 type Range = (typeof RANGES)[number];
-
-/** Build a stable 12-point series from the real cashflow + a deterministic baseline. */
-function buildSeries(cashflow: { label: string; value: number }[], range: Range): PixelDatum[] {
-  const byLabel = new Map(cashflow.map((c) => [c.label, c.value]));
-  const peak = Math.max(1, ...cashflow.map((c) => c.value));
-  const base = peak || 50000;
-
-  if (range === "Yearly") {
-    return ["2022", "2023", "2024", "2025", "2026"].map((y, i) => ({
-      label: y,
-      value: Math.round(base * (0.5 + ((i * 17) % 10) / 10 + i * 0.15)),
-    }));
-  }
-  if (range === "Weekly") {
-    return Array.from({ length: 8 }, (_, i) => ({
-      label: `W${i + 1}`,
-      value: Math.round(base * (0.35 + ((i * 23) % 12) / 14)),
-    }));
-  }
-  // Monthly — real value where present, deterministic baseline otherwise.
-  return MONTHS.map((m, i) => ({
-    label: m,
-    value: Math.round(byLabel.get(m) ?? base * (0.28 + ((i * 31) % 13) / 16)),
-  }));
-}
-
-function spark(seed: number): number[] {
-  return Array.from({ length: 9 }, (_, i) => 20 + ((seed * (i + 3) * 7) % 80));
-}
 
 export default function DashboardPage() {
   const { user, hasRole } = useAuth();
   const canApprovals = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
-  const { data, loading } = useApi<DashboardSummary>("/dashboard/summary");
+  const [month] = useMonth();
+  const { data, loading } = useApi<DashboardSummary>(withMonth("/dashboard/summary", month));
   const [range, setRange] = useState<Range>("Monthly");
+
+  // Real received-revenue series for the selected range (buckets actual payments).
+  const { data: revenue } = useApi<CashflowPoint[]>(`/dashboard/revenue?range=${range.toLowerCase()}`);
 
   // Role-specific approval widget: the CEO sees what awaits their sign-off,
   // the Manager sees what awaits a payment reference ID.
@@ -73,7 +49,7 @@ export default function DashboardPage() {
           }
         : { title: "Payment approvals", items: queue, empty: "Nothing pending." };
 
-  const series = useMemo(() => buildSeries(data?.cashflow ?? [], range), [data, range]);
+  const series = useMemo(() => revenue ?? [], [revenue]);
   const totalRevenue = useMemo(() => series.reduce((s, d) => s + d.value, 0), [series]);
 
   return (
@@ -94,33 +70,31 @@ export default function DashboardPage() {
           </span>
         </motion.h1>
 
+        <motion.div variants={item}>
+          <MonthFilter />
+        </motion.div>
+
         {/* Metric cards */}
         <motion.div variants={item} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="NET RECEIVABLE"
             value={loading ? "—" : <AnimatedNumber value={data?.net_receivable ?? 0} format={formatINR} />}
-            delta="+0.94 vs last quarter"
-            spark={spark(3)}
+            sub={`Across ${data?.total_invoices ?? 0} invoice${data?.total_invoices === 1 ? "" : "s"}`}
           />
           <MetricCard
             label="NET PAYABLE"
             value={loading ? "—" : <AnimatedNumber value={data?.net_payable ?? 0} format={formatINR} />}
-            unit="vendors"
-            delta="+0.91 vs last quarter"
-            spark={spark(5)}
+            sub={`Across ${data?.total_vendors ?? 0} vendor${data?.total_vendors === 1 ? "" : "s"}`}
           />
           <MetricCard
             label="PENDING APPROVALS"
             value={loading ? "—" : <AnimatedNumber value={data?.pending_approvals ?? 0} />}
-            unit="CFO · CEO"
-            delta="+0.40 this week"
-            spark={spark(2)}
+            sub="Awaiting CEO sign-off"
           />
           <MetricCard
-            label="GST PENDING"
-            value={loading ? "—" : <AnimatedNumber value={data?.gst_pending ?? 0} format={formatINR} />}
-            delta="+0.62 vs last quarter"
-            spark={spark(7)}
+            label="GST TO PAY"
+            value={loading ? "—" : <AnimatedNumber value={data?.gst_payable ?? 0} format={formatINR} />}
+            sub="Sales GST less input credit"
           />
         </motion.div>
 
@@ -142,14 +116,9 @@ export default function DashboardPage() {
                 <span className="text-sm text-ink-40">Total · </span>
                 {formatINR(totalRevenue)}
               </p>
-              <div className="hidden items-center gap-4 text-xs text-secondary sm:flex">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-foreground/35" /> Pending
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full bg-foreground" /> Received
-                </span>
-              </div>
+              <span className="hidden items-center gap-1.5 text-xs text-secondary sm:flex">
+                <span className="h-2 w-2 rounded-full bg-foreground" /> Revenue
+              </span>
             </div>
 
             {/* Range toggle */}
@@ -169,9 +138,21 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <PixelBarChart data={series} labels={{ primary: "Received", secondary: "Pending" }} dotted />
+          {totalRevenue > 0 ? (
+            <PixelBarChart
+              data={series}
+              newRatio={0}
+              labels={{ primary: "Received", secondary: "Pending" }}
+              dotted
+            />
+          ) : (
+            <div className="flex h-56 flex-col items-center justify-center gap-2 text-center">
+              <p className="text-sm font-light text-secondary">No revenue recorded for this period yet.</p>
+              <p className="text-xs text-ink-40">Record a client payment and it will appear here.</p>
+            </div>
+          )}
 
-          {series.length > 1 && (
+          {totalRevenue > 0 && series.length > 1 && (
             <div className="mt-5 flex items-center justify-between border-t border-line pt-4 text-xs text-secondary">
               <span className="tabular-nums">
                 {series[0].label} · {formatINR(series[0].value)}

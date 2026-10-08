@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** Brand mark — a frosted metallic tile stamped with the "/₹" finance glyph. */
+/** Brand mark — a frosted metallic tile stamped with the Project O2 junction glyph. */
 export function Logo({
   size = 36,
   className,
@@ -21,12 +21,20 @@ export function Logo({
       )}
     >
       <span className="absolute inset-0 rounded-[inherit] bg-[radial-gradient(60%_45%_at_32%_22%,rgba(255,255,255,0.9),transparent_60%)]" />
-      <span
-        className="relative font-semibold leading-none tracking-tight text-foreground/85"
-        style={{ fontSize: size * 0.44 }}
+      <svg
+        viewBox="0 0 512 512"
+        width={size * 0.66}
+        height={size * 0.66}
+        fill="none"
+        className="relative text-foreground/90"
       >
-        /₹
-      </span>
+        <g stroke="currentColor" strokeWidth={38} strokeLinecap="round">
+          <line x1="188" y1="70" x2="255" y2="264" />
+          <line x1="470" y1="86" x2="255" y2="264" />
+          <line x1="58" y1="300" x2="255" y2="264" />
+          <line x1="330" y1="474" x2="255" y2="264" />
+        </g>
+      </svg>
     </span>
   );
 }

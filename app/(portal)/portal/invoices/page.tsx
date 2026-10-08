@@ -1,31 +1,26 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { PageHeading } from "@/components/portal/ui";
 import { useAuth } from "@/lib/auth";
 import { OverviewTab } from "@/components/portal/invoices/OverviewTab";
 import { PaymentReceivedTab } from "@/components/portal/invoices/PaymentReceivedTab";
-import { PayoutPanel } from "@/components/portal/PayoutPanel";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { Tabs, type TabItem } from "@/components/portal/Tabs";
 
-type TabKey = "overview" | "received" | "payout";
+type TabKey = "overview" | "received";
 
 export default function InvoicesPage() {
   const { hasRole } = useAuth();
-  // Payment Received (TDS/GST) and Payout (approvals) are NON_EXEC-only, mirroring
-  // the server guards on /taxation/* and /approvals/*.
+  // Payment Received (TDS/GST) is NON_EXEC-only, mirroring the server guard on
+  // /taxation/*. Outgoing payouts live on the Approvals page.
   const canFinance = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
   const [tab, setTab] = useState<TabKey>("overview");
 
-  const tabs: { key: TabKey; label: string }[] = [
+  const tabs: TabItem<TabKey>[] = [
     { key: "overview", label: "Overview" },
-    ...(canFinance
-      ? ([
-          { key: "received", label: "Payment Received" },
-          { key: "payout", label: "Payout" },
-        ] as { key: TabKey; label: string }[])
-      : []),
+    ...(canFinance ? [{ key: "received" as const, label: "Payment Received" }] : []),
   ];
 
   const active: TabKey = tabs.some((t) => t.key === tab) ? tab : "overview";
@@ -36,36 +31,13 @@ export default function InvoicesPage() {
         <PageHeading
           title="Client Invoices"
           description="A single source of truth. Invoices lock automatically once a payment is recorded."
+          action={<MonthFilter />}
         />
 
-        {/* Tab switcher — Overview / Payment Received / Payout */}
-        {tabs.length > 1 && (
-          <div className="flex w-fit items-center gap-1 rounded-full border border-line bg-white/50 p-1">
-            {tabs.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={
-                  "relative rounded-full px-4 py-2 text-xs font-medium transition-colors " +
-                  (active === t.key ? "text-background" : "text-secondary hover:text-foreground")
-                }
-              >
-                {active === t.key && (
-                  <motion.span
-                    layoutId="invoice-tab"
-                    className="absolute inset-0 -z-10 rounded-full bg-foreground"
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                  />
-                )}
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
+        {tabs.length > 1 && <Tabs tabs={tabs} active={active} onChange={setTab} layoutId="invoice-tab" label="Invoice views" />}
 
         {active === "overview" && <OverviewTab />}
         {active === "received" && <PaymentReceivedTab />}
-        {active === "payout" && <PayoutPanel />}
       </div>
     </PortalShell>
   );

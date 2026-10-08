@@ -2,19 +2,20 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus } from "lucide-react";
+import { Plus, Building2 } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { PageHeading, Table, Row, Cell, Empty, Field, inputClass } from "@/components/portal/ui";
-import { Modal } from "@/components/portal/Modal";
-import { Select } from "@/components/portal/Select";
+import { Modal, ModalFooter } from "@/components/portal/Modal";
+import { GstField } from "@/components/portal/GstField";
+import { AgentSelect } from "@/components/portal/AgentSelect";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
-import { api, ApiError, type Client, type Agent } from "@/lib/api";
+import { api, ApiError, type Client, type AgentOption } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 
 export default function ClientsPage() {
   const { data, loading, refetch } = useApi<Client[]>("/clients");
-  const { data: agents } = useApi<Agent[]>("/agents");
+  const { data: agents } = useApi<AgentOption[]>("/agents/options");
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
@@ -47,11 +48,21 @@ export default function ClientsPage() {
             ))}
           </Table>
         ) : (
-          <Empty message={loading ? "Loading clients…" : "No clients yet. Add your first."} />
+          <Empty
+            message={loading ? "Loading clients…" : "No clients yet. Onboard your first to start invoicing."}
+            icon={<Building2 className="h-5 w-5" strokeWidth={1.6} />}
+            action={
+              loading ? undefined : (
+                <Button size="sm" magnetic={false} onClick={() => setOpen(true)}>
+                  <Plus className="h-4 w-4" /> New client
+                </Button>
+              )
+            }
+          />
         )}
       </div>
 
-      <ClientForm open={open} onOpenChange={setOpen} onSaved={refetch} agents={agents ?? []} />
+      <ClientForm open={open} onOpenChange={setOpen} onSaved={refetch} agents={agents} />
     </PortalShell>
   );
 }
@@ -65,7 +76,7 @@ function ClientForm({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
-  agents: Agent[];
+  agents: AgentOption[] | null;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -76,12 +87,8 @@ function ClientForm({
     setError(null);
     const fd = new FormData(e.currentTarget);
     const body = Object.fromEntries(fd);
-    const agentId = fd.get("agent_id");
     try {
-      await api.post("/clients", {
-        ...body,
-        agent_id: agentId && agentId !== "none" ? Number(agentId) : null,
-      });
+      await api.post("/clients", { ...body, agent_id: Number(fd.get("agent_id")) });
       onOpenChange(false);
       onSaved();
     } catch (err) {
@@ -106,24 +113,15 @@ function ClientForm({
         <Field label="Phone">
           <input name="phone" className={inputClass} />
         </Field>
-        <Field label="GST number">
-          <input name="gst_number" className={inputClass} />
-        </Field>
+        <GstField />
         <Field label="COI">
           <input name="coi" className={inputClass} />
         </Field>
         <Field label="Category">
           <input name="category" placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
         </Field>
-        <Field label="Referral agent (optional)">
-          <Select
-            name="agent_id"
-            defaultValue="none"
-            options={[
-              { value: "none", label: "— None —" },
-              ...agents.map((a) => ({ value: String(a.id), label: a.business_name })),
-            ]}
-          />
+        <Field label="Referral agent">
+          <AgentSelect options={agents} />
         </Field>
         <Field label="Billing address">
           <input name="billing_address" className={inputClass} />
@@ -134,14 +132,14 @@ function ClientForm({
           </Field>
         </div>
         {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
-        <div className="sm:col-span-2 flex justify-end gap-3 pt-2">
+        <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button type="submit" magnetic={false} disabled={saving}>
             {saving ? "Saving…" : "Save client"}
           </Button>
-        </div>
+        </ModalFooter>
       </form>
     </Modal>
   );

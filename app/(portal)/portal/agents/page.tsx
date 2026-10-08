@@ -29,16 +29,15 @@ export default function AgentsPage() {
         />
 
         {data && data.length > 0 ? (
-          <Table head={["Agent", "Contact", "GST", "Commission", "Status"]}>
+          <Table head={["Agent", "Phone", "Commission", "Status"]}>
             {data.map((a) => (
               <Row key={a.id} onClick={() => router.push(`/portal/agents/${a.id}`)}>
                 <Cell className="font-medium">
                   {a.business_name}
                   <span className="block text-xs text-ink-40">{a.email}</span>
                 </Cell>
-                <Cell className="text-ink-40">{a.contact_person ?? "—"}</Cell>
-                <Cell className="text-ink-40">{a.gst_number ?? "—"}</Cell>
-                <Cell className="tabular-nums">{a.commission_rate}%</Cell>
+                <Cell className="text-ink-40">{a.phone ?? "-"}</Cell>
+                <Cell className="tabular-nums">{a.is_house ? "In-house · 0%" : `${a.commission_rate}%`}</Cell>
                 <Cell>
                   <StatusPill status={a.is_active ? "Active" : "Inactive"} />
                 </Cell>
@@ -88,16 +87,10 @@ function AgentForm({
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Onboard an agent" description="Capture contact, commission and payout details.">
+    <Modal open={open} onOpenChange={onOpenChange} title="Onboard an agent" description="Name, contact details and commission.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Business name">
+        <Field label="Agent name">
           <input name="business_name" required className={inputClass} />
-        </Field>
-        <Field label="Registered legal name">
-          <input name="legal_name" className={inputClass} />
-        </Field>
-        <Field label="Contact person">
-          <input name="contact_person" className={inputClass} />
         </Field>
         <Field label="Email">
           <input name="email" type="email" required className={inputClass} />
@@ -108,32 +101,9 @@ function AgentForm({
         <Field label="Commission rate (%)">
           <input name="commission_rate" type="number" step="0.01" defaultValue={5} className={inputClass} />
         </Field>
-        <Field label="GST number">
-          <input name="gst_number" className={inputClass} />
-        </Field>
-        <Field label="PAN">
-          <input name="pan" className={inputClass} />
-        </Field>
-        <Field label="Bank account holder">
-          <input name="bank_account_holder" className={inputClass} />
-        </Field>
-        <Field label="Bank name">
-          <input name="bank_name" className={inputClass} />
-        </Field>
-        <Field label="Account number">
-          <input name="account_number" className={inputClass} />
-        </Field>
-        <Field label="IFSC code">
-          <input name="ifsc_code" className={inputClass} />
-        </Field>
         <div className="sm:col-span-2">
           <Field label="Address">
             <input name="address" className={inputClass} />
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="Notes">
-            <textarea name="notes" rows={2} className={inputClass + " h-auto py-2.5"} />
           </Field>
         </div>
         {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}

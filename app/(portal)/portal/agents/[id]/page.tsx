@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Mail, Phone, Handshake } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Handshake, Pencil, FileDown } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import {
   Panel,
@@ -13,19 +14,32 @@ import {
   Empty,
   StatusPill,
   DataField,
+  Field,
+  inputClass,
 } from "@/components/portal/ui";
+import { Modal, ModalFooter } from "@/components/portal/Modal";
+import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
-import type { Agent, Client, Invoice } from "@/lib/api";
+import { api, ApiError, type Agent, type Client, type Invoice } from "@/lib/api";
+import { documentDate } from "@/lib/invoice";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { useMonth, withMonth } from "@/lib/month";
 
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const { data: agent, loading } = useApi<Agent>(id ? `/agents/${id}` : null);
+  const { hasRole } = useAuth();
+  const canManage = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
+  const [editOpen, setEditOpen] = useState(false);
+
+  const { data: agent, loading, refetch } = useApi<Agent>(id ? `/agents/${id}` : null);
   const { data: allClients } = useApi<Client[]>("/clients");
-  const { data: invoices } = useApi<Invoice[]>(id ? `/invoices?agent_id=${id}` : null);
+  const [month] = useMonth();
+  const { data: invoices } = useApi<Invoice[]>(id ? withMonth(`/invoices?agent_id=${id}`, month) : null);
 
   const clients = (allClients ?? []).filter((c) => c.agent_id === Number(id));
   const rows = invoices ?? [];
@@ -78,7 +92,20 @@ export default function AgentDetailPage() {
               </div>
             </div>
           </div>
-          {agent && <StatusPill status={agent.is_active ? "Active" : "Inactive"} />}
+          <div className="flex items-center gap-3">
+            {agent?.is_house && <StatusPill status="In-house default" />}
+            {agent && <StatusPill status={agent.is_active ? "Active" : "Inactive"} />}
+            {agent && canManage && !agent.is_house && <MouDownload agent={agent} />}
+            {agent && canManage && (
+              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4" /> Edit
+              </Button>
+            )}
+          </div>
+        </motion.div>
+
+        <motion.div variants={fadeUp}>
+          <MonthFilter />
         </motion.div>
 
         {/* KPIs */}
@@ -94,18 +121,9 @@ export default function AgentDetailPage() {
           <Panel>
             <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Agent details</h2>
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
-              <DataField label="Registered legal name" value={agent?.legal_name} />
-              <DataField label="Contact person" value={agent?.contact_person} />
               <DataField label="Commission rate" value={agent ? `${agent.commission_rate}%` : null} />
-              <DataField label="GST number" value={agent?.gst_number} mono />
-              <DataField label="PAN" value={agent?.pan} mono />
+              <DataField label="Address" value={agent?.address} className="sm:col-span-2" />
               <DataField label="Onboarded" value={agent ? formatDate(agent.created_at) : null} />
-              <DataField label="Bank account holder" value={agent?.bank_account_holder} />
-              <DataField label="Bank name" value={agent?.bank_name} />
-              <DataField label="Account number" value={agent?.account_number} mono />
-              <DataField label="IFSC code" value={agent?.ifsc_code} mono />
-              <DataField label="Address" value={agent?.address} className="sm:col-span-2 lg:col-span-2" />
-              <DataField label="Notes" value={agent?.notes} className="sm:col-span-2 lg:col-span-3" />
             </div>
           </Panel>
         </motion.div>
@@ -136,9 +154,9 @@ export default function AgentDetailPage() {
             <Table head={["Invoice", "Client", "Date", "Total", "Status"]}>
               {rows.map((inv) => (
                 <Row key={inv.id} onClick={() => router.push(`/portal/invoices/${inv.id}`)}>
-                  <Cell className="font-medium">{inv.invoice_number}</Cell>
+                  <Cell className="font-medium">{inv.display_number}</Cell>
                   <Cell>{clientName(inv.client_id)}</Cell>
-                  <Cell className="text-ink-40">{formatDate(inv.invoice_date)}</Cell>
+                  <Cell className="text-ink-40">{formatDate(documentDate(inv))}</Cell>
                   <Cell className="tabular-nums">{formatINR(inv.total_amount)}</Cell>
                   <Cell>
                     <StatusPill status={inv.status} />
@@ -151,6 +169,113 @@ export default function AgentDetailPage() {
           )}
         </motion.div>
       </motion.div>
+
+      {agent && (
+        <AgentEditForm open={editOpen} onOpenChange={setEditOpen} agent={agent} onSaved={refetch} />
+      )}
     </PortalShell>
+  );
+}
+
+function AgentEditForm({
+  open,
+  onOpenChange,
+  agent,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  agent: Agent;
+  onSaved: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    const fd = new FormData(e.currentTarget);
+    const body = Object.fromEntries(fd);
+    try {
+      await api.patch(`/agents/${agent.id}`, {
+        ...body,
+        commission_rate: Number(fd.get("commission_rate") || 0),
+      });
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onOpenChange={onOpenChange} title="Edit agent" description="Name, contact details and commission.">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Agent name">
+          <input name="business_name" required defaultValue={agent.business_name} className={inputClass} />
+        </Field>
+        <Field label="Email">
+          <input name="email" type="email" required defaultValue={agent.email} className={inputClass} />
+        </Field>
+        <Field label="Phone">
+          <input name="phone" defaultValue={agent.phone ?? ""} className={inputClass} />
+        </Field>
+        <Field label={agent.is_house ? "Commission rate (%) · fixed at 0 for the in-house agent" : "Commission rate (%)"}>
+          <input
+            name="commission_rate"
+            type="number"
+            step="0.01"
+            defaultValue={agent.commission_rate}
+            readOnly={agent.is_house}
+            aria-readonly={agent.is_house}
+            className={inputClass + (agent.is_house ? " text-ink-40" : "")}
+          />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Address">
+            <input name="address" defaultValue={agent.address ?? ""} className={inputClass} />
+          </Field>
+        </div>
+        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        <ModalFooter>
+          <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" magnetic={false} disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </ModalFooter>
+      </form>
+    </Modal>
+  );
+}
+
+/** Downloads the agent's MOU (commission terms) as a PDF. */
+function MouDownload({ agent }: { agent: Agent }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function download() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.download(`/agents/${agent.id}/mou.pdf`, `MOU-${agent.business_name}.pdf`);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not download the MOU");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <Button size="sm" variant="secondary" magnetic={false} onClick={download} disabled={busy}>
+        <FileDown className="h-4 w-4" /> {busy ? "Preparing…" : "Download MOU (PDF)"}
+      </Button>
+      {error && <p role="alert" className="max-w-xs text-right text-xs text-foreground/80">⚠ {error}</p>}
+    </div>
   );
 }

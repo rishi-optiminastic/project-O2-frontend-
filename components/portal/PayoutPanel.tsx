@@ -9,6 +9,8 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, type Approval } from "@/lib/api";
 import { formatINR, formatDate } from "@/lib/utils";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { useMonth, withMonth } from "@/lib/month";
 
 /**
  * The full payout / payment-approval flow — list, create, CEO sign-off, and
@@ -19,7 +21,8 @@ import { formatINR, formatDate } from "@/lib/utils";
  * them for a compact toolbar (tab usage).
  */
 export function PayoutPanel({ title, description }: { title?: string; description?: string }) {
-  const { data, loading, refetch } = useApi<Approval[]>("/approvals");
+  const [month] = useMonth();
+  const { data, loading, refetch } = useApi<Approval[]>(withMonth("/approvals", month));
   const [createOpen, setCreateOpen] = useState(false);
   const [active, setActive] = useState<Approval | null>(null);
 
@@ -36,7 +39,16 @@ export function PayoutPanel({ title, description }: { title?: string; descriptio
   return (
     <div className="flex flex-col gap-8">
       {title ? (
-        <PageHeading title={title} description={description} action={newButton} />
+        <PageHeading
+          title={title}
+          description={description}
+          action={
+            <div className="flex flex-wrap items-center gap-3">
+              <MonthFilter />
+              {newButton}
+            </div>
+          }
+        />
       ) : (
         <div className="flex items-center justify-end">{newButton}</div>
       )}

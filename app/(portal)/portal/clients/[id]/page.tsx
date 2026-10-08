@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Mail, Phone, Building2, Lock } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Building2, Lock, Pencil } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import {
   Panel,
@@ -13,20 +14,37 @@ import {
   Empty,
   StatusPill,
   DataField,
+  Field,
+  inputClass,
 } from "@/components/portal/ui";
+import { Modal, ModalFooter } from "@/components/portal/Modal";
+import { AgentSelect, agentLabel } from "@/components/portal/AgentSelect";
+import { GstField } from "@/components/portal/GstField";
+import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
-import type { Client, Invoice, Agent } from "@/lib/api";
+import { api, ApiError, type Client, type Invoice, type Agent, type AgentOption } from "@/lib/api";
+import { documentDate } from "@/lib/invoice";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { useMonth, withMonth } from "@/lib/month";
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const { data: client, loading } = useApi<Client>(id ? `/clients/${id}` : null);
-  const { data: invoices } = useApi<Invoice[]>(id ? `/invoices?client_id=${id}` : null);
-  const { data: agents } = useApi<Agent[]>("/agents");
+  const { hasRole } = useAuth();
+  const canManage = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
+  const [editOpen, setEditOpen] = useState(false);
+
+  const { data: client, loading, refetch } = useApi<Client>(id ? `/clients/${id}` : null);
+  const [month] = useMonth();
+  const { data: invoices } = useApi<Invoice[]>(id ? withMonth(`/invoices?client_id=${id}`, month) : null);
+  const { data: agents } = useApi<AgentOption[]>("/agents/options");
   const agent = agents?.find((a) => a.id === client?.agent_id);
+  // Commission rates are visible to managers only.
+  const { data: agentDetail } = useApi<Agent>(canManage && client ? `/agents/${client.agent_id}` : null);
 
   const rows = invoices ?? [];
   const totalBilled = rows.reduce((s, i) => s + i.total_amount, 0);
@@ -83,7 +101,18 @@ export default function ClientDetailPage() {
               </div>
             </div>
           </div>
-          {client?.category && <StatusPill status={client.category} />}
+          <div className="flex items-center gap-3">
+            {client?.category && <StatusPill status={client.category} />}
+            {client && canManage && (
+              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setEditOpen(true)}>
+                <Pencil className="h-4 w-4" /> Edit
+              </Button>
+            )}
+          </div>
+        </motion.div>
+
+        <motion.div variants={fadeUp}>
+          <MonthFilter />
         </motion.div>
 
         {/* Taxation + receivables KPIs */}
@@ -105,7 +134,13 @@ export default function ClientDetailPage() {
               <DataField label="Category" value={client?.category} />
               <DataField
                 label="Referral agent"
-                value={agent ? `${agent.business_name} · ${agent.commission_rate}%` : null}
+                value={
+                  agent
+                    ? agent.is_house || !agentDetail
+                      ? agentLabel(agent)
+                      : `${agent.business_name} · ${agentDetail.commission_rate}%`
+                    : null
+                }
               />
               <DataField label="Onboarded" value={client ? formatDate(client.created_at) : null} />
               <DataField label="Billing address" value={client?.billing_address} className="sm:col-span-2 lg:col-span-1" />
@@ -121,8 +156,8 @@ export default function ClientDetailPage() {
             <Table head={["Invoice", "Date", "Total", "Pending", "Status", ""]}>
               {rows.map((inv) => (
                 <Row key={inv.id} onClick={() => router.push(`/portal/invoices/${inv.id}`)}>
-                  <Cell className="font-medium">{inv.invoice_number}</Cell>
-                  <Cell className="text-ink-40">{formatDate(inv.invoice_date)}</Cell>
+                  <Cell className="font-medium">{inv.display_number}</Cell>
+                  <Cell className="text-ink-40">{formatDate(documentDate(inv))}</Cell>
                   <Cell className="tabular-nums">{formatINR(inv.total_amount)}</Cell>
                   <Cell className="tabular-nums text-ink-40">{formatINR(inv.amount_pending)}</Cell>
                   <Cell>
@@ -143,6 +178,96 @@ export default function ClientDetailPage() {
           )}
         </motion.div>
       </motion.div>
+
+      {client && (
+        <ClientEditForm
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          client={client}
+          agents={agents}
+          onSaved={refetch}
+        />
+      )}
     </PortalShell>
+  );
+}
+
+function ClientEditForm({
+  open,
+  onOpenChange,
+  client,
+  agents,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  client: Client;
+  agents: AgentOption[] | null;
+  onSaved: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    const fd = new FormData(e.currentTarget);
+    const body = Object.fromEntries(fd);
+    try {
+      await api.patch(`/clients/${client.id}`, { ...body, agent_id: Number(fd.get("agent_id")) });
+      onOpenChange(false);
+      onSaved();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onOpenChange={onOpenChange} title="Edit client" description="Update the client's onboarding details.">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Business name">
+          <input name="business_name" required defaultValue={client.business_name} className={inputClass} />
+        </Field>
+        <Field label="Registered legal name">
+          <input name="legal_name" defaultValue={client.legal_name ?? ""} className={inputClass} />
+        </Field>
+        <Field label="Official email">
+          <input name="email" type="email" required defaultValue={client.email} className={inputClass} />
+        </Field>
+        <Field label="Phone">
+          <input name="phone" defaultValue={client.phone ?? ""} className={inputClass} />
+        </Field>
+        <GstField defaultValue={client.gst_number} />
+        <Field label="COI">
+          <input name="coi" defaultValue={client.coi ?? ""} className={inputClass} />
+        </Field>
+        <Field label="Category">
+          <input name="category" defaultValue={client.category ?? ""} placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
+        </Field>
+        <Field label="Referral agent">
+          <AgentSelect options={agents} defaultValue={client.agent_id} />
+        </Field>
+        <Field label="Billing address">
+          <input name="billing_address" defaultValue={client.billing_address ?? ""} className={inputClass} />
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="Notes / special instructions">
+            <textarea name="notes" rows={2} defaultValue={client.notes ?? ""} className={inputClass + " h-auto py-2.5"} />
+          </Field>
+        </div>
+        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        <ModalFooter>
+          <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button type="submit" magnetic={false} disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </ModalFooter>
+      </form>
+    </Modal>
   );
 }

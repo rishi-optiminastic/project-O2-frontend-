@@ -7,17 +7,21 @@ import { ArrowLeft, FileText, Lock, Pencil, Trash2, Download, Plus, Check } from
 import { PortalShell } from "@/components/portal/PortalShell";
 import { Panel, Field, inputClass, StatusPill, Empty, DataField } from "@/components/portal/ui";
 import { Modal } from "@/components/portal/Modal";
-import { Select } from "@/components/portal/Select";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
-import { api, ApiError, type Invoice, type Client, type Agent } from "@/lib/api";
+import { api, ApiError, type Invoice, type Client, type AgentOption, type Service } from "@/lib/api";
+import { ServiceSelect } from "@/components/portal/ServiceSelect";
+import { AgentSelect, agentLabel } from "@/components/portal/AgentSelect";
+import { documentKind } from "@/lib/invoice";
+import { InvoiceWorkflowPanel } from "@/components/portal/invoices/InvoiceWorkflowPanel";
+import { InvoiceTimeline } from "@/components/portal/invoices/InvoiceTimeline";
 import { formatINR, formatDate, cn } from "@/lib/utils";
 
-const STATUSES = [
-  "Draft", "Sent", "Pending", "Partially Paid", "Fully Paid", "Overdue", "Cancelled", "Disputed", "Reconciled",
-];
+/** Proforma stages in which the team may still edit (the client has not approved yet). */
+const EDITABLE_PROFORMA = ["Draft", "Changes Requested", "Awaiting Client"];
+const DELETABLE_PROFORMA = ["Draft", "Changes Requested"];
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,7 +30,10 @@ export default function InvoiceDetailPage() {
 
   const { data: invoice, loading, refetch } = useApi<Invoice>(id ? `/invoices/${id}` : null);
   const { data: clients } = useApi<Client[]>("/clients");
-  const { data: agents } = useApi<Agent[]>("/agents");
+  const { data: agents } = useApi<AgentOption[]>("/agents/options");
+  const { data: services } = useApi<Service[]>("/services");
+  // Choosing another service in the edit form re-fills its description, SAC and GST rate.
+  const [editService, setEditService] = useState<Service>();
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -53,9 +60,14 @@ export default function InvoiceDetailPage() {
   const clientName = client?.business_name ?? `Client #${invoice.client_id}`;
   const agent = agents?.find((a) => a.id === invoice.agent_id);
 
-  const canPay = !["Draft", "Cancelled", "Fully Paid"].includes(invoice.status);
-  const canEdit = !invoice.is_locked || hasRole("ADMIN_CEO");
-  const canDelete = invoice.status === "Draft" && hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
+  const canPay = invoice.is_issued && !["Cancelled", "Fully Paid"].includes(invoice.status);
+  // TDS the client has yet to deduct; it settles part of what is due without cash.
+  const tdsSoFar = (invoice.payments ?? []).reduce((sum, p) => sum + p.tds_deducted, 0);
+  const tdsStillExpected = Math.min(Math.max(+(invoice.expected_tds - tdsSoFar).toFixed(2), 0), invoice.amount_pending);
+  const canEdit = invoice.is_issued
+    ? !invoice.is_locked || hasRole("ADMIN_CEO")
+    : EDITABLE_PROFORMA.includes(invoice.status);
+  const canDelete = DELETABLE_PROFORMA.includes(invoice.status) && hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
 
   async function recordPayment(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -73,7 +85,7 @@ export default function InvoiceDetailPage() {
         amount,
         payment_date: fd.get("payment_date"),
         bank_reference: fd.get("bank_reference"),
-        payment_mode: fd.get("payment_mode"),
+        bank_name: fd.get("bank_name"),
         tds_deducted: Number(fd.get("tds_deducted") || 0),
         gst_component: Number(fd.get("gst_component") || 0),
         remarks: fd.get("remarks"),
@@ -98,13 +110,17 @@ export default function InvoiceDetailPage() {
       await api.patch(`/invoices/${invoice!.id}`, {
         due_date: fd.get("due_date") || null,
         service_description: fd.get("service_description"),
+        sac_code: fd.get("sac_code") || null,
+        // The agent and service are fixed once the tax invoice is issued.
+        ...(invoice!.is_issued ? {} : { agent_id: Number(fd.get("agent_id")) }),
+        ...(!invoice!.is_issued && editService ? { service_id: editService.id } : {}),
         taxable_value: Number(fd.get("taxable_value")),
         gst_rate: Number(fd.get("gst_rate")),
         tds_rate: Number(fd.get("tds_rate") || 0),
-        status: fd.get("status"),
         internal_remarks: fd.get("internal_remarks"),
       });
       setEditing(false);
+      setEditService(undefined);
       refetch();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update invoice");
@@ -114,7 +130,7 @@ export default function InvoiceDetailPage() {
   }
 
   async function remove() {
-    if (!confirm("Delete this draft invoice? This cannot be undone.")) return;
+    if (!confirm("Delete this proforma? This cannot be undone.")) return;
     setSaving(true);
     setError(null);
     try {
@@ -126,15 +142,18 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  // A proforma creates no receivable and no GST liability, so collection figures appear only once issued.
   const financials: [string, string][] = [
     ["Taxable value", formatINR(invoice.taxable_value)],
     [`GST ${invoice.gst_rate}%`, formatINR(invoice.gst_amount)],
-    invoice.is_interstate ? ["IGST", formatINR(invoice.igst)] : ["CGST", formatINR(invoice.cgst)],
-    invoice.is_interstate ? ["GST status", invoice.gst_status] : ["SGST", formatINR(invoice.sgst)],
+    ...(invoice.is_interstate
+      ? ([["IGST", formatINR(invoice.igst)]] as [string, string][])
+      : ([["CGST", formatINR(invoice.cgst)], ["SGST", formatINR(invoice.sgst)]] as [string, string][])),
     ["Expected TDS", formatINR(invoice.expected_tds)],
     ["Total", formatINR(invoice.total_amount)],
-    ["Received", formatINR(invoice.amount_received)],
-    ["Pending", formatINR(invoice.amount_pending)],
+    ...(invoice.is_issued
+      ? ([["Received", formatINR(invoice.amount_received)], ["Pending", formatINR(invoice.amount_pending)]] as [string, string][])
+      : []),
   ];
 
   return (
@@ -155,8 +174,9 @@ export default function InvoiceDetailPage() {
               <FileText className="h-6 w-6 text-foreground/70" />
             </span>
             <div>
+              <p className="text-xs tracking-eyebrow text-secondary">{documentKind(invoice)}</p>
               <h1 className="font-sans text-4xl font-bold leading-[0.95] tracking-[-0.04em]">
-                {invoice.invoice_number}
+                {invoice.display_number}
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
@@ -176,7 +196,7 @@ export default function InvoiceDetailPage() {
                     onClick={() => router.push(`/portal/agents/${agent.id}`)}
                     className="inline-flex items-center gap-1.5 rounded-full border border-line bg-mist px-3 py-1 text-xs text-secondary transition-colors hover:text-foreground"
                   >
-                    Agent · {agent.business_name} ({agent.commission_rate}%)
+                    Agent · {agentLabel(agent)}
                   </button>
                 )}
               </div>
@@ -216,27 +236,70 @@ export default function InvoiceDetailPage() {
           </motion.p>
         )}
 
+        {invoice.status === "Awaiting Client" && editing && (
+          <motion.p variants={fadeUp} className="rounded-xl border border-line bg-mist/60 px-3 py-2 text-xs text-secondary">
+            The client is reviewing this proforma. Saving changes withdraws their link; you will need to send it again.
+          </motion.p>
+        )}
+
+        {!editing && (
+          <motion.div variants={fadeUp}>
+            <InvoiceWorkflowPanel invoice={invoice} clientName={clientName} onChanged={refetch} />
+          </motion.div>
+        )}
+
         {editing ? (
           /* ---- Edit form ---- */
           <motion.div variants={fadeUp}>
             <Panel>
               <form onSubmit={saveEdit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Status">
-                  <Select name="status" defaultValue={invoice.status} options={STATUSES.map((s) => ({ value: s, label: s }))} />
-                </Field>
                 <Field label="Due date">
                   <input name="due_date" type="date" defaultValue={invoice.due_date ?? ""} className={inputClass} />
                 </Field>
                 <div className="sm:col-span-2">
                   <Field label="Service description">
-                    <input name="service_description" defaultValue={invoice.service_description ?? ""} className={inputClass} />
+                    <input
+                      key={`desc-${editService?.id}`}
+                      name="service_description"
+                      defaultValue={(editService ? editService.description : invoice.service_description) ?? ""}
+                      className={inputClass}
+                    />
                   </Field>
                 </div>
+                {!invoice.is_issued && (
+                  <Field label="Agent credited">
+                    <AgentSelect options={agents} defaultValue={invoice.agent_id} />
+                  </Field>
+                )}
+                {!invoice.is_issued && (
+                  <Field label="Service">
+                    <ServiceSelect
+                      services={services}
+                      value={editService?.id ?? invoice.service_id ?? undefined}
+                      onChange={(s) => setEditService(s)}
+                    />
+                  </Field>
+                )}
+                <Field label="SAC code (GST service code)">
+                  <input
+                    key={`sac-${editService?.id}`}
+                    name="sac_code"
+                    defaultValue={(editService ? editService.sac_code : invoice.sac_code) ?? ""}
+                    className={inputClass}
+                  />
+                </Field>
                 <Field label="Taxable value (₹)">
                   <input name="taxable_value" type="number" step="0.01" defaultValue={invoice.taxable_value} className={inputClass} />
                 </Field>
                 <Field label="GST rate (%)">
-                  <input name="gst_rate" type="number" step="0.01" defaultValue={invoice.gst_rate} className={inputClass} />
+                  <input
+                    key={`gst-${editService?.id}`}
+                    name="gst_rate"
+                    type="number"
+                    step="0.01"
+                    defaultValue={editService ? editService.gst_rate : invoice.gst_rate}
+                    className={inputClass}
+                  />
                 </Field>
                 <Field label="TDS rate (%)">
                   <input name="tds_rate" type="number" step="0.01" defaultValue={invoice.tds_rate} className={inputClass} />
@@ -272,11 +335,14 @@ export default function InvoiceDetailPage() {
                 <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Invoice details</h2>
                 <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
                   <DataField label="Client" value={clientName} />
-                  <DataField label="Referral agent" value={agent ? `${agent.business_name} · ${agent.commission_rate}%` : null} />
-                  <DataField label="Invoice date" value={formatDate(invoice.invoice_date)} />
+                  <DataField label="Agent credited" value={agent ? agentLabel(agent) : null} />
+                  <DataField label="Proforma" value={invoice.proforma_number ? `${invoice.proforma_number}${invoice.proforma_date ? ` · ${formatDate(invoice.proforma_date)}` : ""}` : null} />
+                  <DataField label="Tax invoice date" value={invoice.invoice_date ? formatDate(invoice.invoice_date) : "Set when issued"} />
+                  <DataField label="SAC code" value={invoice.sac_code} />
                   <DataField label="Due date" value={invoice.due_date ? formatDate(invoice.due_date) : null} />
-                  <DataField label="GST status" value={invoice.gst_status} />
-                  <DataField label="TDS applicable" value={invoice.tds_applicable ? `Yes · ${invoice.tds_rate}%` : "No"} />
+                  <DataField label="GST status" value={invoice.is_issued ? invoice.gst_status : "Not yet due (proforma)"} />
+                  <DataField label="TDS deducted by client" value={`${invoice.tds_rate}%`} />
+                  <DataField label="Service" value={invoice.service_title} />
                   <DataField label="Service description" value={invoice.service_description} className="sm:col-span-2 lg:col-span-2" />
                   <DataField label="Supporting document" value={invoice.supporting_document} />
                   <DataField label="Internal remarks" value={invoice.internal_remarks} className="sm:col-span-2 lg:col-span-3" />
@@ -284,7 +350,8 @@ export default function InvoiceDetailPage() {
               </Panel>
             </motion.div>
 
-            {/* Payments — stepper */}
+            {/* Payments stepper (only an issued tax invoice can be paid) */}
+            {invoice.is_issued && (
             <motion.div variants={fadeUp} className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Payment progress</h2>
@@ -297,6 +364,11 @@ export default function InvoiceDetailPage() {
 
               <PaymentStepper invoice={invoice} />
             </motion.div>
+            )}
+
+            <motion.div variants={fadeUp}>
+              <InvoiceTimeline key={`${invoice.status}-${invoice.amount_received}`} invoiceId={invoice.id} />
+            </motion.div>
 
           </>
         )}
@@ -307,10 +379,10 @@ export default function InvoiceDetailPage() {
         open={payOpen}
         onOpenChange={setPayOpen}
         title="Record a payment"
-        description="Recording a payment locks the invoice's financial fields."
+        description="Cash received plus the TDS the client deducted settles the invoice. Recording a payment locks its financial fields."
       >
         <form onSubmit={recordPayment} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label={`Amount (₹) · max ${formatINR(invoice.amount_pending)}`}>
+          <Field label={`Cash received (₹) · ${formatINR(invoice.amount_pending)} still due`}>
             <input
               name="amount"
               type="number"
@@ -318,7 +390,7 @@ export default function InvoiceDetailPage() {
               min="0.01"
               max={invoice.amount_pending}
               required
-              defaultValue={invoice.amount_pending}
+              defaultValue={Math.max(invoice.amount_pending - tdsStillExpected, 0)}
               className={inputClass}
             />
           </Field>
@@ -328,11 +400,11 @@ export default function InvoiceDetailPage() {
           <Field label="Bank reference / UTR">
             <input name="bank_reference" className={inputClass} />
           </Field>
-          <Field label="Mode">
-            <Select name="payment_mode" defaultValue="NEFT" options={["NEFT", "RTGS", "IMPS", "UPI", "Cheque", "Cash", "Other"].map((m) => ({ value: m, label: m }))} />
+          <Field label="Bank name (received into)">
+            <input name="bank_name" required maxLength={120} placeholder="HDFC Bank" className={inputClass} />
           </Field>
-          <Field label="TDS deducted by client (₹)">
-            <input name="tds_deducted" type="number" step="0.01" defaultValue={0} className={inputClass} />
+          <Field label={`TDS deducted by client (₹) · ${formatINR(tdsStillExpected)} expected`}>
+            <input name="tds_deducted" type="number" step="0.01" min="0" max={tdsStillExpected} defaultValue={tdsStillExpected} className={inputClass} />
           </Field>
           <Field label="GST component (₹)">
             <input name="gst_component" type="number" step="0.01" defaultValue={0} className={inputClass} />
@@ -397,7 +469,7 @@ function PaymentStepper({ invoice }: { invoice: Invoice }) {
                 <span className="text-xs text-ink-40">{formatDate(p.payment_date)}</span>
               </div>
               <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-ink-40">
-                <span>{p.payment_mode} · {p.bank_reference ?? "—"}</span>
+                <span>{p.bank_name ?? p.payment_mode} · {p.bank_reference ?? "-"}</span>
                 <span>TDS {formatINR(p.tds_deducted)}</span>
                 {p.gst_component ? <span>GST {formatINR(p.gst_component)}</span> : null}
               </div>

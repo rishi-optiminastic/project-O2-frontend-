@@ -1,8 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { stagger } from "@/lib/motion";
 import { DottedSparkline } from "@/components/charts/DottedSparkline";
@@ -51,7 +51,7 @@ export function PageHeading({
 
 export function Panel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("rounded-[28px] border border-line bg-white/60 p-6", className)}>{children}</div>
+    <div className={cn("rounded-[28px] border border-line card-surface p-6", className)}>{children}</div>
   );
 }
 
@@ -67,7 +67,7 @@ export function KpiTile({
   icon?: ReactNode;
 }) {
   return (
-    <div className="relative overflow-hidden rounded-[28px] border border-line bg-white/60 p-6">
+    <div className="relative overflow-hidden rounded-[28px] border border-line card-surface p-6">
       <div className="flex items-start justify-between">
         <span className="text-xs tracking-eyebrow text-secondary">{label}</span>
         {icon && <span className="text-ink-40">{icon}</span>}
@@ -96,7 +96,7 @@ export function MiniBars({ data, peak }: { data: number[]; peak?: number }) {
 }
 
 /** Shared dashboard card radius / surface — one radius for every card. */
-export const CARD = "rounded-[28px] border border-line bg-white/60";
+export const CARD = "rounded-[28px] border border-line card-surface";
 
 /** Reference-style metric card: label · big value · dotted chart · footer. */
 export function MetricCard({
@@ -112,7 +112,8 @@ export function MetricCard({
   unit?: string;
   delta?: string;
   sub?: string;
-  spark: number[];
+  /** Optional trend series. Pass only real data for this metric - never a placeholder series. */
+  spark?: number[];
 }) {
   return (
     <div className={cn(CARD, "flex flex-col p-6")}>
@@ -121,9 +122,13 @@ export function MetricCard({
         {value}
         {unit && <span className="ml-1.5 align-baseline text-xs font-normal text-ink-40">{unit}</span>}
       </p>
-      <div className="mt-5 flex-1">
-        <DottedSparkline data={spark} rows={5} dot={4} gap={3} />
-      </div>
+      {spark ? (
+        <div className="mt-5 flex-1">
+          <DottedSparkline data={spark} rows={5} dot={4} gap={3} />
+        </div>
+      ) : (
+        <div className="flex-1" />
+      )}
       {(delta || sub) && (
         <div className="mt-5 flex items-center gap-2 border-t border-line pt-4 text-xs text-secondary">
           {delta ? (
@@ -145,7 +150,7 @@ export function MetricCard({
 /** Simple, elegant data table. */
 export function Table({ head, children }: { head: string[]; children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-[28px] border border-line bg-white/50">
+    <div className="overflow-x-auto rounded-[28px] border border-line card-surface">
       <table className="w-full min-w-[640px] text-left text-sm">
         <thead>
           <tr className="border-b border-line">
@@ -170,13 +175,27 @@ export function Table({ head, children }: { head: string[]; children: ReactNode 
 }
 
 export function Row({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+  // Clickable rows must also be reachable and operable from the keyboard.
+  const onKeyDown = onClick
+    ? (e: KeyboardEvent<HTMLTableRowElement>) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }
+    : undefined;
+
   return (
     <motion.tr
       variants={rowReveal}
       onClick={onClick}
+      onKeyDown={onKeyDown}
+      tabIndex={onClick ? 0 : undefined}
       className={cn(
         "border-b border-line/60 transition-colors last:border-0",
-        onClick && "cursor-pointer hover:bg-mist/50",
+        onClick &&
+          "cursor-pointer outline-none hover:bg-mist/50 focus-visible:bg-mist/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-foreground/20",
       )}
     >
       {children}
@@ -188,11 +207,22 @@ export function Cell({ children, className }: { children: ReactNode; className?:
   return <td className={cn("whitespace-nowrap px-5 py-4 font-light", className)}>{children}</td>;
 }
 
-export function Empty({ message }: { message: string }) {
+export function Empty({
+  message,
+  icon,
+  action,
+}: {
+  message: string;
+  icon?: ReactNode;
+  action?: ReactNode;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-[28px] border border-dashed border-line py-20 text-center">
-      <span className="metallic h-10 w-10 rounded-full opacity-70" />
-      <p className="text-sm font-light text-secondary">{message}</p>
+    <div className="flex flex-col items-center justify-center gap-4 rounded-[28px] border border-dashed border-line py-16 text-center">
+      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-mist text-ink-40">
+        {icon ?? <Inbox className="h-5 w-5" strokeWidth={1.6} />}
+      </span>
+      <p className="max-w-xs text-sm font-light text-secondary">{message}</p>
+      {action}
     </div>
   );
 }

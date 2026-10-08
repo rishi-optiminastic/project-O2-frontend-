@@ -10,7 +10,7 @@ export interface SelectOption {
 }
 
 /**
- * Custom select built on @radix-ui/react-select — frosted, on-brand, fully
+ * Custom select built on @radix-ui/react-select — solid enough to read over any page, fully
  * keyboard-accessible. Supports native form submission via `name`.
  */
 export function Select({
@@ -56,7 +56,7 @@ export function Select({
         <RSelect.Content
           position="popper"
           sideOffset={6}
-          className="glass-strong z-[130] max-h-72 w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl p-1 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]"
+          className="popover-surface z-[130] max-h-72 w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl p-1 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]"
         >
           <RSelect.Viewport>
             {options.map((o) => (

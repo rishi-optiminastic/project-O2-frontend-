@@ -5,16 +5,23 @@ import { PageHeading, Table, Row, Cell, Empty } from "@/components/portal/ui";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import type { AuditEntry } from "@/lib/api";
+import { MonthFilter } from "@/components/portal/MonthFilter";
+import { useMonth, withMonth } from "@/lib/month";
 
 export default function AuditPage() {
   const { hasRole } = useAuth();
   const allowed = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
-  const { data, loading, error } = useApi<AuditEntry[]>(allowed ? "/audit?limit=200" : null);
+  const [month] = useMonth();
+  const { data, loading, error } = useApi<AuditEntry[]>(allowed ? withMonth("/audit?limit=500", month) : null);
 
   return (
     <PortalShell>
       <div className="flex flex-col gap-8">
-        <PageHeading title="Audit Trail" description="Append-only record of every action, for leadership oversight." />
+        <PageHeading
+          title="Audit Trail"
+          description="Append-only record of every action, for leadership oversight."
+          action={<MonthFilter />}
+        />
 
         {!allowed ? (
           <Empty message="Audit trail is restricted to leadership roles." />
