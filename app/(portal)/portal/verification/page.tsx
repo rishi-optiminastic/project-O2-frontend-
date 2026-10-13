@@ -10,6 +10,7 @@ import { api, ApiError, type BankStatement, type BankStatementDetail } from "@/l
 import { formatINR, formatDate } from "@/lib/utils";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
+import { FIELD_RULES, NAME_MAX } from "@/lib/validation";
 
 export default function VerificationPage() {
   const [month] = useMonth();
@@ -55,15 +56,15 @@ export default function VerificationPage() {
           <h2 className="mb-4 text-lg font-light tracking-tight">Upload statement</h2>
           <form onSubmit={onUpload} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Bank name">
-              <input name="bank_name" className={inputClass} placeholder="HDFC Bank" />
+              <input name="bank_name" maxLength={NAME_MAX} className={inputClass} placeholder="HDFC Bank" />
             </Field>
             <Field label="Account number">
-              <input name="account_number" className={inputClass} />
+              <input name="account_number" {...FIELD_RULES.accountNumber} className={inputClass} />
             </Field>
             <Field label="File (CSV / Excel / PDF)">
               <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls,.pdf" required className={inputClass + " py-1.5 text-secondary file:mr-3 file:h-8 file:cursor-pointer file:rounded-full file:border-0 file:bg-foreground file:px-4 file:text-xs file:font-medium file:text-background"} />
             </Field>
-            {error && <p className="sm:col-span-3 text-sm text-foreground/80">⚠ {error}</p>}
+            {error && <p className="sm:col-span-3 text-sm text-danger">⚠ {error}</p>}
             <div className="sm:col-span-3 flex justify-end">
               <Button size="sm" type="submit" magnetic={false} disabled={uploading}>
                 <Upload className="h-4 w-4" /> {uploading ? "Matching…" : "Upload & auto-match"}

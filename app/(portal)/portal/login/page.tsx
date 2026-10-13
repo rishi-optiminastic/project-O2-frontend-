@@ -81,7 +81,7 @@ export default function LoginPage() {
             />
           </Field>
 
-          {error && <p className="text-sm text-foreground/80">⚠ {error}</p>}
+          {error && <p className="text-sm text-danger">⚠ {error}</p>}
 
           <Button type="submit" size="lg" className="mt-1 w-full" magnetic={false} disabled={loading}>
             {loading ? "Signing in…" : "Sign in"}

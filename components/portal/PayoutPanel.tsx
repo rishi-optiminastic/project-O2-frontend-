@@ -9,8 +9,10 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, type Approval } from "@/lib/api";
 import { formatINR, formatDate } from "@/lib/utils";
+import { FIELD_RULES, NAME_MAX, NUMBER_RULES, TEXT_MAX, matchesRule } from "@/lib/validation";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
+import { emitPortalEvent, PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
 
 /**
  * The full payout / payment-approval flow — list, create, CEO sign-off, and
@@ -25,6 +27,8 @@ export function PayoutPanel({ title, description }: { title?: string; descriptio
   const { data, loading, refetch } = useApi<Approval[]>(withMonth("/approvals", month));
   const [createOpen, setCreateOpen] = useState(false);
   const [active, setActive] = useState<Approval | null>(null);
+  // Requests raised from the floating button elsewhere in the portal.
+  usePortalEvent(PORTAL_EVENTS.paymentRequested, refetch);
 
   async function openDetail(id: number) {
     setActive(await api.get<Approval>(`/approvals/${id}`));
@@ -71,7 +75,7 @@ export function PayoutPanel({ title, description }: { title?: string; descriptio
         <Empty message={loading ? "Loading approvals…" : "No approval requests yet."} />
       )}
 
-      <CreateApproval open={createOpen} onOpenChange={setCreateOpen} onSaved={refetch} />
+      <CreateApproval open={createOpen} onOpenChange={setCreateOpen} />
       {active && (
         <ApprovalDetail
           approval={active}
@@ -86,7 +90,8 @@ export function PayoutPanel({ title, description }: { title?: string; descriptio
   );
 }
 
-function CreateApproval({ open, onOpenChange, onSaved }: { open: boolean; onOpenChange: (v: boolean) => void; onSaved: () => void }) {
+/** Raise an outgoing payment for CFO, then CEO, sign-off. */
+export function CreateApproval({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -107,7 +112,7 @@ function CreateApproval({ open, onOpenChange, onSaved }: { open: boolean; onOpen
         bank_details: fd.get("bank_details"),
       });
       onOpenChange(false);
-      onSaved();
+      emitPortalEvent(PORTAL_EVENTS.paymentRequested);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save");
     } finally {
@@ -116,26 +121,27 @@ function CreateApproval({ open, onOpenChange, onSaved }: { open: boolean; onOpen
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title="New payment approval" description="Submit a payout for CEO sign-off.">
+    <Modal open={open} onOpenChange={onOpenChange} title="Record a payment"
+      description="Money going out to a vendor or other payee. It goes to the CFO, then the CEO, and is released once the bank reference (UTR) is entered.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Payee name">
-          <input name="payee_name" required className={inputClass} />
+          <input name="payee_name" required maxLength={NAME_MAX} className={inputClass} />
         </Field>
         <Field label="Amount (₹)">
-          <input name="amount" type="number" step="0.01" required className={inputClass} />
+          <input name="amount" {...NUMBER_RULES.positiveMoney} required className={inputClass} />
         </Field>
         <Field label="Tax deductions (₹)">
-          <input name="tax_deductions" type="number" step="0.01" defaultValue={0} className={inputClass} />
+          <input name="tax_deductions" {...NUMBER_RULES.money} defaultValue={0} className={inputClass} />
         </Field>
         <Field label="Purpose">
-          <input name="purpose" className={inputClass} />
+          <input name="purpose" maxLength={TEXT_MAX} className={inputClass} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Bank details">
-            <input name="bank_details" placeholder="Bank · A/C · IFSC" className={inputClass} />
+            <input name="bank_details" maxLength={TEXT_MAX} placeholder="Bank · A/C · IFSC" className={inputClass} />
           </Field>
         </div>
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
@@ -212,7 +218,8 @@ function ApprovalDetail({ approval, onClose, onChanged }: { approval: Approval; 
             <textarea
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="Add a comment (optional)"
+              placeholder="Add a comment (needed to reject)"
+              maxLength={TEXT_MAX}
               rows={2}
               className={inputClass + " h-auto py-2.5"}
             />
@@ -220,7 +227,7 @@ function ApprovalDetail({ approval, onClose, onChanged }: { approval: Approval; 
               <Button size="sm" magnetic={false} disabled={busy} onClick={() => act("ceo", { approve: true, comment })}>
                 <Check className="h-4 w-4" /> Approve
               </Button>
-              <Button size="sm" variant="secondary" magnetic={false} disabled={busy} onClick={() => act("ceo", { approve: false, comment })}>
+              <Button size="sm" variant="secondary" magnetic={false} disabled={busy || !comment.trim()} onClick={() => act("ceo", { approve: false, comment })}>
                 <X className="h-4 w-4" /> Reject
               </Button>
             </div>
@@ -242,13 +249,14 @@ function ApprovalDetail({ approval, onClose, onChanged }: { approval: Approval; 
               value={reference}
               onChange={(e) => setReference(e.target.value)}
               placeholder="Payment reference / UTR (required)"
+              {...FIELD_RULES.bankReference}
               className={inputClass + " mt-3"}
             />
             <div className="mt-3 flex justify-end">
               <Button
                 size="sm"
                 magnetic={false}
-                disabled={busy || !reference.trim()}
+                disabled={busy || !matchesRule(FIELD_RULES.bankReference, reference)}
                 onClick={() => act("release", { payment_reference: reference.trim() })}
               >
                 <Check className="h-4 w-4" /> Mark paid &amp; complete
@@ -256,7 +264,7 @@ function ApprovalDetail({ approval, onClose, onChanged }: { approval: Approval; 
             </div>
           </Panel>
         )}
-        {error && <p className="text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="text-sm text-danger">⚠ {error}</p>}
 
         {/* Audit trail */}
         <div>

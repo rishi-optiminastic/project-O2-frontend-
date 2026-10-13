@@ -8,6 +8,8 @@ import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type Service } from "@/lib/api";
+import { Select } from "@/components/portal/Select";
+import { FIELD_RULES, GST_RATE_OPTIONS } from "@/lib/validation";
 
 const DEFAULT_GST_RATE = 18;
 
@@ -127,22 +129,13 @@ function ServiceForm({ service, onClose, onSaved }: { service: Service | null; o
           </Field>
         </div>
         <Field label="SAC code (GST service code)">
-          <input name="sac_code" maxLength={12} defaultValue={service?.sac_code ?? ""} placeholder="998221" className={inputClass} />
+          <input name="sac_code" {...FIELD_RULES.sac} defaultValue={service?.sac_code ?? ""} placeholder="998221" className={inputClass} />
         </Field>
         <Field label="GST rate (%)">
-          <input
-            name="gst_rate"
-            type="number"
-            step="0.01"
-            min={0}
-            max={40}
-            required
-            defaultValue={service?.gst_rate ?? DEFAULT_GST_RATE}
-            className={inputClass}
-          />
+          <Select name="gst_rate" required options={GST_RATE_OPTIONS} defaultValue={String(service?.gst_rate ?? DEFAULT_GST_RATE)} />
         </Field>
 
-        {error && <p role="alert" className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p role="alert" className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           {service && (
             <>

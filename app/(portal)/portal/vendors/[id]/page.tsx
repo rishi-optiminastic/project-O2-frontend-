@@ -25,7 +25,8 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
-import { api, ApiError, type Vendor, type VendorInvoice, type Project, TDS_SECTIONS, VENDOR_GST_RATES } from "@/lib/api";
+import { api, ApiError, type Vendor, type VendorInvoice, type Project, TDS_SECTIONS } from "@/lib/api";
+import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES, indiaToday, pastDateRule } from "@/lib/validation";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
 
@@ -128,7 +129,7 @@ export default function VendorDetailPage() {
           </div>
         </motion.div>
 
-        {err && <p className="text-sm text-foreground/80">⚠ {err}</p>}
+        {err && <p className="text-sm text-danger">⚠ {err}</p>}
 
         {/* KPIs */}
         <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
@@ -277,7 +278,7 @@ function VendorEditForm({
     <Modal open={open} onOpenChange={onOpenChange} title="Edit vendor" description="Update contact, tax and bank details.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <VendorFields vendor={vendor} />
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
@@ -348,10 +349,10 @@ function VendorInvoiceForm({
     <Modal open={open} onOpenChange={onOpenChange} title="Record vendor invoice" description="GST is worked out from the rate; TDS from the section. Net payable = amount + GST - TDS.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Invoice number">
-          <input name="invoice_number" required className={inputClass} />
+          <input name="invoice_number" required {...FIELD_RULES.invoiceNumber} className={inputClass} />
         </Field>
         <Field label="Invoice date">
-          <input name="invoice_date" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} className={inputClass} />
+          <input name="invoice_date" {...pastDateRule()} required defaultValue={indiaToday()} className={inputClass} />
         </Field>
         <Field label="Project (optional)">
           <Select
@@ -361,10 +362,10 @@ function VendorInvoiceForm({
           />
         </Field>
         <Field label="Amount before GST (₹)">
-          <input name="invoice_amount" type="number" min={0} step="0.01" value={amount} onChange={(e) => setAmount(Number(e.target.value))} className={inputClass} />
+          <input name="invoice_amount" {...NUMBER_RULES.positiveMoney} required value={amount} onChange={(e) => setAmount(Number(e.target.value))} className={inputClass} />
         </Field>
         <Field label="GST rate">
-          <Select value={gstRate} onValueChange={setGstRate} options={VENDOR_GST_RATES.map((r) => ({ value: String(r), label: `${r}%` }))} />
+          <Select value={gstRate} onValueChange={setGstRate} options={GST_RATE_OPTIONS} />
         </Field>
         <Field label="TDS section">
           <Select value={section} onValueChange={setSection} options={TDS_SECTIONS.map((t) => ({ value: t.key, label: `${t.label} (${t.rate}%)` }))} />
@@ -374,7 +375,7 @@ function VendorInvoiceForm({
           Vendor is in another state (IGST instead of CGST + SGST)
         </label>
         {!vendorGstin && gst > 0 && (
-          <p className="text-xs text-secondary sm:col-span-2">
+          <p className="text-xs text-warning sm:col-span-2">
             ⚠ This vendor has no GSTIN on record, so the GST on this bill cannot be claimed as input credit. Add their GSTIN on the vendor first if they have one.
           </p>
         )}
@@ -394,7 +395,7 @@ function VendorInvoiceForm({
           </div>
         </div>
 
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button type="submit" magnetic={false} disabled={saving}>{saving ? "Saving…" : "Save invoice"}</Button>

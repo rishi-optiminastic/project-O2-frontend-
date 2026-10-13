@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type Client, type AgentOption } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
+import { FIELD_RULES, NAME_MAX, TEXT_MAX } from "@/lib/validation";
 
 export default function ClientsPage() {
   const { data, loading, refetch } = useApi<Client[]>("/clients");
@@ -102,36 +103,36 @@ function ClientForm({
     <Modal open={open} onOpenChange={onOpenChange} title="Onboard a client" description="Capture the client intake details.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Business name">
-          <input name="business_name" required className={inputClass} />
+          <input name="business_name" maxLength={NAME_MAX} required className={inputClass} />
         </Field>
         <Field label="Registered legal name">
-          <input name="legal_name" className={inputClass} />
+          <input name="legal_name" maxLength={NAME_MAX} className={inputClass} />
         </Field>
         <Field label="Official email">
           <input name="email" type="email" required className={inputClass} />
         </Field>
         <Field label="Phone">
-          <input name="phone" className={inputClass} />
+          <input name="phone" type="tel" {...FIELD_RULES.phone} className={inputClass} />
         </Field>
         <GstField />
         <Field label="COI">
-          <input name="coi" className={inputClass} />
+          <input name="coi" {...FIELD_RULES.cin} className={inputClass} />
         </Field>
         <Field label="Category">
-          <input name="category" placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
+          <input name="category" maxLength={NAME_MAX} placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
         </Field>
         <Field label="Referral agent">
           <AgentSelect options={agents} />
         </Field>
         <Field label="Billing address">
-          <input name="billing_address" className={inputClass} />
+          <input name="billing_address" maxLength={TEXT_MAX} className={inputClass} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Notes / special instructions">
-            <textarea name="notes" rows={2} className={inputClass + " h-auto py-2.5"} />
+            <textarea name="notes" maxLength={TEXT_MAX} rows={2} className={inputClass + " h-auto py-2.5"} />
           </Field>
         </div>
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel

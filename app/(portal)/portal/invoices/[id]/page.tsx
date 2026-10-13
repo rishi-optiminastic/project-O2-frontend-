@@ -6,7 +6,6 @@ import { motion } from "framer-motion";
 import { ArrowLeft, FileText, Lock, Pencil, Trash2, Download, Plus, Check } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { Panel, Field, inputClass, StatusPill, Empty, DataField } from "@/components/portal/ui";
-import { Modal } from "@/components/portal/Modal";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
@@ -15,8 +14,12 @@ import { api, ApiError, type Invoice, type Client, type AgentOption, type Servic
 import { ServiceSelect } from "@/components/portal/ServiceSelect";
 import { AgentSelect, agentLabel } from "@/components/portal/AgentSelect";
 import { documentKind } from "@/lib/invoice";
+import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES } from "@/lib/validation";
+import { Select } from "@/components/portal/Select";
 import { InvoiceWorkflowPanel } from "@/components/portal/invoices/InvoiceWorkflowPanel";
 import { InvoiceTimeline } from "@/components/portal/invoices/InvoiceTimeline";
+import { RecordReceiptModal, canRecordReceipt } from "@/components/portal/invoices/RecordReceipt";
+import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
 import { formatINR, formatDate, cn } from "@/lib/utils";
 
 /** Proforma stages in which the team may still edit (the client has not approved yet). */
@@ -38,7 +41,9 @@ export default function InvoiceDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState(false);
-  const [payOpen, setPayOpen] = useState(false);
+  const [receiptOpen, setReceiptOpen] = useState(false);
+  // A receipt recorded here or from the floating button changes the amounts and status.
+  usePortalEvent(PORTAL_EVENTS.receiptRecorded, refetch);
 
   if (!loading && !invoice) {
     return (
@@ -60,46 +65,11 @@ export default function InvoiceDetailPage() {
   const clientName = client?.business_name ?? `Client #${invoice.client_id}`;
   const agent = agents?.find((a) => a.id === invoice.agent_id);
 
-  const canPay = invoice.is_issued && !["Cancelled", "Fully Paid"].includes(invoice.status);
-  // TDS the client has yet to deduct; it settles part of what is due without cash.
-  const tdsSoFar = (invoice.payments ?? []).reduce((sum, p) => sum + p.tds_deducted, 0);
-  const tdsStillExpected = Math.min(Math.max(+(invoice.expected_tds - tdsSoFar).toFixed(2), 0), invoice.amount_pending);
+  const canReceive = canRecordReceipt(invoice);
   const canEdit = invoice.is_issued
     ? !invoice.is_locked || hasRole("ADMIN_CEO")
     : EDITABLE_PROFORMA.includes(invoice.status);
   const canDelete = DELETABLE_PROFORMA.includes(invoice.status) && hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
-
-  async function recordPayment(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const amount = Number(fd.get("amount"));
-    const pending = invoice!.amount_pending;
-    if (amount > pending + 0.01) {
-      setError(`Payment of ${formatINR(amount)} exceeds the pending amount of ${formatINR(pending)}.`);
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await api.post(`/invoices/${invoice!.id}/payments`, {
-        amount,
-        payment_date: fd.get("payment_date"),
-        bank_reference: fd.get("bank_reference"),
-        bank_name: fd.get("bank_name"),
-        tds_deducted: Number(fd.get("tds_deducted") || 0),
-        gst_component: Number(fd.get("gst_component") || 0),
-        remarks: fd.get("remarks"),
-        attachment: fd.get("attachment") || null,
-      });
-      (e.target as HTMLFormElement).reset();
-      setPayOpen(false);
-      refetch();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to record payment");
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function saveEdit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -188,7 +158,7 @@ export default function InvoiceDetailPage() {
                 <StatusPill status={invoice.status} />
                 {invoice.is_locked && (
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-line bg-mist px-3 py-1 text-xs text-secondary">
-                    <Lock className="h-3 w-3" /> Locked since {invoice.locked_at ? formatDate(invoice.locked_at) : "payment"}
+                    <Lock className="h-3 w-3" /> Locked since {invoice.locked_at ? formatDate(invoice.locked_at) : "receipt"}
                   </span>
                 )}
                 {agent && (
@@ -284,32 +254,32 @@ export default function InvoiceDetailPage() {
                   <input
                     key={`sac-${editService?.id}`}
                     name="sac_code"
+                    {...FIELD_RULES.sac}
                     defaultValue={(editService ? editService.sac_code : invoice.sac_code) ?? ""}
                     className={inputClass}
                   />
                 </Field>
                 <Field label="Taxable value (₹)">
-                  <input name="taxable_value" type="number" step="0.01" defaultValue={invoice.taxable_value} className={inputClass} />
+                  <input name="taxable_value" {...NUMBER_RULES.positiveMoney} required defaultValue={invoice.taxable_value} className={inputClass} />
                 </Field>
                 <Field label="GST rate (%)">
-                  <input
+                  <Select
                     key={`gst-${editService?.id}`}
                     name="gst_rate"
-                    type="number"
-                    step="0.01"
-                    defaultValue={editService ? editService.gst_rate : invoice.gst_rate}
-                    className={inputClass}
+                    required
+                    options={GST_RATE_OPTIONS}
+                    defaultValue={String(editService ? editService.gst_rate : invoice.gst_rate)}
                   />
                 </Field>
                 <Field label="TDS rate (%)">
-                  <input name="tds_rate" type="number" step="0.01" defaultValue={invoice.tds_rate} className={inputClass} />
+                  <input name="tds_rate" {...NUMBER_RULES.tdsRate} defaultValue={invoice.tds_rate} className={inputClass} />
                 </Field>
                 <div className="sm:col-span-2">
                   <Field label="Internal remarks">
                     <input name="internal_remarks" defaultValue={invoice.internal_remarks ?? ""} className={inputClass} />
                   </Field>
                 </div>
-                {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+                {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
                 <div className="sm:col-span-2 flex justify-end gap-3">
                   <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={() => setEditing(false)}>Cancel</Button>
                   <Button type="submit" size="sm" magnetic={false} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
@@ -350,14 +320,14 @@ export default function InvoiceDetailPage() {
               </Panel>
             </motion.div>
 
-            {/* Payments stepper (only an issued tax invoice can be paid) */}
+            {/* Receipts stepper (only an issued tax invoice can receive money) */}
             {invoice.is_issued && (
             <motion.div variants={fadeUp} className="flex flex-col gap-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Payment progress</h2>
-                {canPay && (
-                  <Button size="sm" magnetic={false} onClick={() => { setError(null); setPayOpen(true); }}>
-                    <Plus className="h-4 w-4" /> Record payment
+                <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Receipts</h2>
+                {canReceive && (
+                  <Button size="sm" magnetic={false} onClick={() => setReceiptOpen(true)}>
+                    <Plus className="h-4 w-4" /> Record receipt
                   </Button>
                 )}
               </div>
@@ -374,69 +344,18 @@ export default function InvoiceDetailPage() {
         )}
       </motion.div>
 
-      {/* Record payment dialog */}
-      <Modal
-        open={payOpen}
-        onOpenChange={setPayOpen}
-        title="Record a payment"
-        description="Cash received plus the TDS the client deducted settles the invoice. Recording a payment locks its financial fields."
-      >
-        <form onSubmit={recordPayment} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label={`Cash received (₹) · ${formatINR(invoice.amount_pending)} still due`}>
-            <input
-              name="amount"
-              type="number"
-              step="0.01"
-              min="0.01"
-              max={invoice.amount_pending}
-              required
-              defaultValue={Math.max(invoice.amount_pending - tdsStillExpected, 0)}
-              className={inputClass}
-            />
-          </Field>
-          <Field label="Date">
-            <input name="payment_date" type="date" required defaultValue={new Date().toISOString().slice(0, 10)} className={inputClass} />
-          </Field>
-          <Field label="Bank reference / UTR">
-            <input name="bank_reference" className={inputClass} />
-          </Field>
-          <Field label="Bank name (received into)">
-            <input name="bank_name" required maxLength={120} placeholder="HDFC Bank" className={inputClass} />
-          </Field>
-          <Field label={`TDS deducted by client (₹) · ${formatINR(tdsStillExpected)} expected`}>
-            <input name="tds_deducted" type="number" step="0.01" min="0" max={tdsStillExpected} defaultValue={tdsStillExpected} className={inputClass} />
-          </Field>
-          <Field label="GST component (₹)">
-            <input name="gst_component" type="number" step="0.01" defaultValue={0} className={inputClass} />
-          </Field>
-          <Field label="Remarks">
-            <input name="remarks" className={inputClass} />
-          </Field>
-          <Field label="Attachment (reference / link)">
-            <input name="attachment" className={inputClass} />
-          </Field>
-          {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
-          <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
-            <Button type="button" variant="secondary" magnetic={false} onClick={() => setPayOpen(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" magnetic={false} disabled={saving}>
-              {saving ? "Recording…" : "Record payment (locks invoice)"}
-            </Button>
-          </div>
-        </form>
-      </Modal>
+      <RecordReceiptModal open={receiptOpen} onOpenChange={setReceiptOpen} invoiceId={invoice.id} />
     </PortalShell>
   );
 }
 
-/** Vertical stepper showing payment progress toward the invoice total. */
+/** Vertical stepper of receipts toward the invoice total. TDS the client deducted counts as settled. */
 function PaymentStepper({ invoice }: { invoice: Invoice }) {
   const payments = invoice.payments ?? [];
   const total = invoice.total_amount;
   const received = invoice.amount_received;
   const pending = invoice.amount_pending;
-  const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+  const pct = total > 0 ? Math.min(100, Math.round(((total - pending) / total) * 100)) : 0;
   const fullyPaid = pending <= 0.01;
 
   return (
@@ -493,7 +412,7 @@ function PaymentStepper({ invoice }: { invoice: Invoice }) {
             ) : (
               <span className="text-secondary">
                 Remaining <span className="font-medium tabular-nums text-foreground">{formatINR(pending)}</span>
-                {payments.length === 0 && " — no payments recorded yet"}
+                {payments.length === 0 && ". No receipts recorded yet."}
               </span>
             )}
           </div>

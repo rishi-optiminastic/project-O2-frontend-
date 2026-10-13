@@ -7,7 +7,14 @@ export interface TabItem<K extends string> {
   label: string;
   /** Small count shown after the label, e.g. items needing action. */
   badge?: number;
+  /** Colors the badge when its count needs attention. */
+  badgeTone?: "warning" | "danger";
 }
+
+const BADGE_TONES = {
+  warning: "bg-warning-soft text-warning",
+  danger: "bg-danger-soft text-danger",
+};
 
 /** Pill tab switcher. `layoutId` must be unique per page so the highlight animates within one switcher. */
 export function Tabs<K extends string>({
@@ -48,7 +55,7 @@ export function Tabs<K extends string>({
             <span
               className={
                 "ml-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] " +
-                (active === t.key ? "bg-background/20" : "bg-foreground/10")
+                (t.badgeTone ? BADGE_TONES[t.badgeTone] : active === t.key ? "bg-background/20" : "bg-foreground/10")
               }
             >
               {t.badge}

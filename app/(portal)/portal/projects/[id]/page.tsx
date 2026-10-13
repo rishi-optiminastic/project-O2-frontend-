@@ -115,7 +115,7 @@ export default function ProjectDetailPage() {
         </div>
 
         {notice && (
-          <p role="status" className="text-sm text-foreground/80">
+          <p role="status" className={notice.startsWith("⚠") ? "text-sm text-danger" : "text-sm text-success"}>
             {notice}
           </p>
         )}
@@ -163,7 +163,7 @@ export default function ProjectDetailPage() {
                   <Cell className="tabular-nums">{formatINR(v.agreed_cost)}</Cell>
                   <Cell className="tabular-nums">
                     {formatINR(v.invoiced)}
-                    {v.over_invoiced && <span className="block text-xs font-medium">⚠ above agreed cost</span>}
+                    {v.over_invoiced && <span className="block text-xs font-medium text-danger">⚠ above agreed cost</span>}
                   </Cell>
                   <Cell>
                     <WorkOrderState vendor={v} />
@@ -238,7 +238,7 @@ function WorkOrderState({ vendor }: { vendor: ProjectVendor }) {
       <span className="block text-ink-40">
         {vendor.work_order_sent_at ? `Emailed ${formatDate(vendor.work_order_sent_at)}` : "Issued, not emailed"}
       </span>
-      {vendor.work_order_outdated && <span className="block font-medium">⚠ Terms changed: send again</span>}
+      {vendor.work_order_outdated && <span className="block font-medium text-warning">⚠ Terms changed: send again</span>}
     </span>
   );
 }

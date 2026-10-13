@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { Field, inputClass } from "@/components/portal/ui";
 import { api, ApiError, type GstLookupResult } from "@/lib/api";
+import { FIELD_RULES } from "@/lib/validation";
 
 /**
  * GST number input that verifies the GSTIN and auto-fills sibling form fields.
@@ -96,10 +97,8 @@ export function GstField({
         name="gst_number"
         defaultValue={defaultValue ?? undefined}
         className={inputClass}
-        placeholder="22AAAAA0000A1Z5"
-        maxLength={15}
-        autoCapitalize="characters"
-        spellCheck={false}
+        placeholder="27AAPFU0939F1ZV"
+        {...FIELD_RULES.gstin}
         onChange={onChange}
         onBlur={(e) => run(e.target.value)}
       />

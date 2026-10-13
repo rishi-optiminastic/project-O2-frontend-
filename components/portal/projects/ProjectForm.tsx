@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { formatINR } from "@/lib/utils";
 import { api, ApiError, PROJECT_STATUSES, type Client, type ProjectDetail, type Vendor } from "@/lib/api";
+import { NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
 
 const FULL_WORK = 100;
 
@@ -189,9 +190,7 @@ export function ProjectForm({
         </div>
         <Field label="Budget (₹)">
           <input
-            type="number"
-            min={0}
-            step="0.01"
+            {...NUMBER_RULES.money}
             value={form.budget}
             onChange={(e) => set("budget", e.target.value)}
             required
@@ -227,6 +226,7 @@ export function ProjectForm({
               value={form.description}
               onChange={(e) => set("description", e.target.value)}
               rows={5}
+              maxLength={TEXT_MAX}
               placeholder="What will be delivered, where, and how it will be reported. This goes on each vendor's work order."
               className={`${inputClass} h-auto py-2.5`}
             />
@@ -267,9 +267,7 @@ export function ProjectForm({
                         </td>
                         <td className="px-4 py-2">
                           <input
-                            type="number"
-                            min={0}
-                            step="0.01"
+                            {...NUMBER_RULES.money}
                             required
                             aria-label={`${name} agreed cost in rupees`}
                             value={v.agreed_cost}
@@ -307,7 +305,7 @@ export function ProjectForm({
         </fieldset>
 
         {error && (
-          <p role="alert" className="col-span-full text-sm text-foreground/80">
+          <p role="alert" className="col-span-full text-sm text-danger">
             ⚠ {error}
           </p>
         )}
@@ -336,13 +334,13 @@ function Totals({ assigned, committed, budget, hasVendors }: { assigned: number;
     <div className="grid grid-cols-1 gap-2 rounded-2xl border border-line bg-mist/50 p-4 text-sm sm:grid-cols-2" aria-live="polite">
       <p>
         <span className="text-secondary">Work assigned: </span>
-        <span className="font-medium tabular-nums">{share}%</span> <span className={share === FULL_WORK ? "text-secondary" : ""}>({shareNote})</span>
+        <span className="font-medium tabular-nums">{share}%</span> <span className={share === FULL_WORK ? "text-success" : share > FULL_WORK ? "text-danger" : "text-warning"}>({shareNote})</span>
       </p>
       <p>
         <span className="text-secondary">Vendor cost: </span>
         <span className="font-medium tabular-nums">{formatINR(committed)}</span>
         <span className="text-secondary"> of {formatINR(budget)} budget</span>
-        {over && <span> (⚠ over by {formatINR(committed - budget)})</span>}
+        {over && <span className="text-danger"> (⚠ over by {formatINR(committed - budget)})</span>}
       </p>
     </div>
   );

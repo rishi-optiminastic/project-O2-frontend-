@@ -64,7 +64,7 @@ export function InvoiceWorkflowPanel({
 
       {shared?.link_url && <SharedLink url={shared.link_url} emailed={shared.emailed} />}
 
-      {error && !dialog && <p role="alert" className="text-sm text-foreground/80">⚠ {error}</p>}
+      {error && !dialog && <p role="alert" className="text-sm text-danger">⚠ {error}</p>}
 
       <div className="flex flex-wrap gap-3">
         {(invoice.status === "Draft" || invoice.status === "Changes Requested") && (
@@ -110,7 +110,7 @@ export function InvoiceWorkflowPanel({
               className={cn(inputClass, "h-auto py-2.5")}
             />
           </Field>
-          {error && <p role="alert" className="text-sm text-foreground/80">⚠ {error}</p>}
+          {error && <p role="alert" className="text-sm text-danger">⚠ {error}</p>}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={() => setDialog(null)}>Cancel</Button>
             <Button type="submit" size="sm" magnetic={false} disabled={busy}>{busy ? "Saving…" : "Record approval"}</Button>
@@ -131,7 +131,7 @@ export function InvoiceWorkflowPanel({
             <li>· The invoice is locked. Corrections need a credit note.</li>
             <li>· {clientName} receives a link to view and download it.</li>
           </ul>
-          {error && <p role="alert" className="text-sm text-foreground/80">⚠ {error}</p>}
+          {error && <p role="alert" className="text-sm text-danger">⚠ {error}</p>}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={() => setDialog(null)}>Cancel</Button>
             <Button size="sm" magnetic={false} onClick={issue} disabled={busy}>{busy ? "Issuing…" : `Issue for ${formatINR(invoice.total_amount)}`}</Button>
@@ -149,7 +149,7 @@ export function InvoiceWorkflowPanel({
           <Field label="What needs to change?">
             <textarea name="reason" required rows={3} className={cn(inputClass, "h-auto py-2.5")} />
           </Field>
-          {error && <p role="alert" className="text-sm text-foreground/80">⚠ {error}</p>}
+          {error && <p role="alert" className="text-sm text-danger">⚠ {error}</p>}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={() => setDialog(null)}>Cancel</Button>
             <Button type="submit" size="sm" magnetic={false} disabled={busy}>{busy ? "Returning…" : "Return to team"}</Button>

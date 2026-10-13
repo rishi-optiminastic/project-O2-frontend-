@@ -9,6 +9,7 @@ import { Modal } from "@/components/portal/Modal";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type Agent } from "@/lib/api";
+import { FIELD_RULES, NAME_MAX, NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
 
 export default function AgentsPage() {
   const { data, loading, refetch } = useApi<Agent[]>("/agents");
@@ -90,23 +91,23 @@ function AgentForm({
     <Modal open={open} onOpenChange={onOpenChange} title="Onboard an agent" description="Name, contact details and commission.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Agent name">
-          <input name="business_name" required className={inputClass} />
+          <input name="business_name" maxLength={NAME_MAX} required className={inputClass} />
         </Field>
         <Field label="Email">
           <input name="email" type="email" required className={inputClass} />
         </Field>
         <Field label="Phone">
-          <input name="phone" className={inputClass} />
+          <input name="phone" type="tel" {...FIELD_RULES.phone} className={inputClass} />
         </Field>
         <Field label="Commission rate (%)">
-          <input name="commission_rate" type="number" step="0.01" defaultValue={5} className={inputClass} />
+          <input name="commission_rate" {...NUMBER_RULES.percent} defaultValue={5} className={inputClass} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Address">
-            <input name="address" className={inputClass} />
+            <input name="address" maxLength={TEXT_MAX} className={inputClass} />
           </Field>
         </div>
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel

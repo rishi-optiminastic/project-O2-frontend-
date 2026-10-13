@@ -8,16 +8,19 @@ import { useApi } from "@/lib/useApi";
 import { formatINR, formatDate } from "@/lib/utils";
 import type { TaxationSummary, PaymentReceipt } from "@/lib/api";
 import { useMonth, withMonth } from "@/lib/month";
+import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
 
 /**
- * The "Payment Received" tab: money coming in from clients and the TDS they
+ * The "Receipts" tab: money coming in from clients and the TDS they
  * deducted, with the receipts ledger. GST and TDS registers live on Taxation.
  */
 export function PaymentReceivedTab() {
   const router = useRouter();
   const [month] = useMonth();
-  const { data: summary, loading: summaryLoading } = useApi<TaxationSummary>(withMonth("/taxation/summary", month));
-  const { data: receipts, loading: receiptsLoading } = useApi<PaymentReceipt[]>(withMonth("/taxation/receipts", month));
+  const { data: summary, loading: summaryLoading, refetch: refetchSummary } = useApi<TaxationSummary>(withMonth("/taxation/summary", month));
+  const { data: receipts, loading: receiptsLoading, refetch: refetchReceipts } = useApi<PaymentReceipt[]>(withMonth("/taxation/receipts", month));
+  usePortalEvent(PORTAL_EVENTS.receiptRecorded, refetchReceipts);
+  usePortalEvent(PORTAL_EVENTS.receiptRecorded, refetchSummary);
 
   const totalReceived = useMemo(() => (receipts ?? []).reduce((s, r) => s + r.amount, 0), [receipts]);
   const amount = (value: number | undefined, loading: boolean) =>
@@ -27,19 +30,20 @@ export function PaymentReceivedTab() {
   return (
     <div className="flex flex-col gap-8">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Cash received" value={amount(totalReceived, receiptsLoading)} sub={`${receipts?.length ?? 0} payments`} />
-        <MetricCard label="TDS deducted by clients" value={amount(summary?.client_tds_deducted, summaryLoading)} sub="Counts towards settling invoices" />
+        <MetricCard label="Cash received" tone="success" value={amount(totalReceived, receiptsLoading)} sub={`${receipts?.length ?? 0} receipts`} />
+        <MetricCard label="TDS deducted by clients" tone="info" value={amount(summary?.client_tds_deducted, summaryLoading)} sub="Counts towards settling invoices" />
         <MetricCard
           label="Form 16A pending"
+          tone={pending ? "warning" : "success"}
           value={summaryLoading ? "—" : String(pending)}
           sub={pending ? "Certificates to collect (see Taxation)" : "All certificates received"}
         />
-        <MetricCard label="GST on sales" value={amount(summary?.output_gst.total, summaryLoading)} sub="Tax invoices issued this month" />
+        <MetricCard label="GST on sales" tone="info" value={amount(summary?.output_gst.total, summaryLoading)} sub="Tax invoices issued this month" />
       </div>
 
       {/* Receipts ledger */}
       <div>
-        <h2 className="mb-4 text-lg font-light tracking-tight">Payments received</h2>
+        <h2 className="mb-4 text-lg font-light tracking-tight">Receipts</h2>
         {receipts && receipts.length > 0 ? (
           <Table head={["Date", "Invoice", "Amount", "TDS deducted", "GST", "Bank", "Reference"]}>
             {receipts.map((r) => (
@@ -55,7 +59,7 @@ export function PaymentReceivedTab() {
             ))}
           </Table>
         ) : (
-          <Empty message={receiptsLoading ? "Loading receipts…" : "No payments received yet."} />
+          <Empty message={receiptsLoading ? "Loading receipts…" : "No receipts recorded yet."} />
         )}
       </div>
     </div>

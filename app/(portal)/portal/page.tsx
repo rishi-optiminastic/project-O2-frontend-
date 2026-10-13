@@ -78,21 +78,25 @@ export default function DashboardPage() {
         <motion.div variants={item} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
             label="NET RECEIVABLE"
+            tone="info"
             value={loading ? "—" : <AnimatedNumber value={data?.net_receivable ?? 0} format={formatINR} />}
             sub={`Across ${data?.total_invoices ?? 0} invoice${data?.total_invoices === 1 ? "" : "s"}`}
           />
           <MetricCard
             label="NET PAYABLE"
+            tone={data?.net_payable ? "warning" : "success"}
             value={loading ? "—" : <AnimatedNumber value={data?.net_payable ?? 0} format={formatINR} />}
             sub={`Across ${data?.total_vendors ?? 0} vendor${data?.total_vendors === 1 ? "" : "s"}`}
           />
           <MetricCard
             label="PENDING APPROVALS"
+            tone={data?.pending_approvals ? "warning" : "success"}
             value={loading ? "—" : <AnimatedNumber value={data?.pending_approvals ?? 0} />}
             sub="Awaiting CEO sign-off"
           />
           <MetricCard
             label="GST TO PAY"
+            tone={data?.gst_payable ? "danger" : "success"}
             value={loading ? "—" : <AnimatedNumber value={data?.gst_payable ?? 0} format={formatINR} />}
             sub="Sales GST less input credit"
           />
@@ -148,7 +152,7 @@ export default function DashboardPage() {
           ) : (
             <div className="flex h-56 flex-col items-center justify-center gap-2 text-center">
               <p className="text-sm font-light text-secondary">No revenue recorded for this period yet.</p>
-              <p className="text-xs text-ink-40">Record a client payment and it will appear here.</p>
+              <p className="text-xs text-ink-40">Record a receipt from a client and it will appear here.</p>
             </div>
           )}
 

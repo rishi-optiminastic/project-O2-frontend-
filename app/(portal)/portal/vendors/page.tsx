@@ -48,7 +48,7 @@ export default function VendorsPage() {
           }
         />
 
-        {err && <p className="text-sm text-foreground/80">⚠ {err}</p>}
+        {err && <p className="text-sm text-danger">⚠ {err}</p>}
 
         {data && data.length > 0 ? (
           <Table head={["Vendor", "GST / PAN", "Bank", "Status", ""]}>
@@ -129,7 +129,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
     <Modal open={open} onOpenChange={onOpenChange} title="Onboard a vendor" description="Capture contact, tax and bank details. Add every account they may be paid into.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <VendorFields />
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel

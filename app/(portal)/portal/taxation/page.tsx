@@ -24,8 +24,8 @@ export default function TaxationPage() {
   const tabs: TabItem<TabKey>[] = [
     { key: "sales", label: "GST on sales" },
     { key: "purchases", label: "GST on purchases" },
-    { key: "client-tds", label: "TDS by clients", badge: data?.client_tds_certificates_pending },
-    { key: "vendor-tds", label: "TDS on vendors", badge: data?.vendor_tds_overdue_count },
+    { key: "client-tds", label: "TDS by clients", badge: data?.client_tds_certificates_pending, badgeTone: "warning" },
+    { key: "vendor-tds", label: "TDS on vendors", badge: data?.vendor_tds_overdue_count, badgeTone: "danger" },
   ];
 
   const gstSub = data
@@ -49,14 +49,15 @@ export default function TaxationPage() {
         />
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="GST to pay" value={amount(data?.net_gst_payable)} sub={gstSub} />
-          <MetricCard label="GST on sales" value={amount(data?.output_gst.total)} sub={`${data?.sales_count ?? 0} tax invoices`} />
+          <MetricCard label="GST to pay" tone={data?.net_gst_payable ? "danger" : "success"} value={amount(data?.net_gst_payable)} sub={gstSub} />
+          <MetricCard label="GST on sales" tone="info" value={amount(data?.output_gst.total)} sub={`${data?.sales_count ?? 0} tax invoices`} />
           <MetricCard
             label="Input GST credit"
+            tone="success"
             value={amount(data?.input_gst.total)}
             sub={data?.input_gst_ineligible ? `${formatINR(data.input_gst_ineligible)} not claimable (no vendor GSTIN)` : `${data?.purchase_count ?? 0} vendor bills`}
           />
-          <MetricCard label="Vendor TDS to deposit" value={amount(data?.vendor_tds_to_deposit)} sub={tdsSub} />
+          <MetricCard label="Vendor TDS to deposit" tone={data?.vendor_tds_overdue_count ? "danger" : data?.vendor_tds_to_deposit ? "warning" : "success"} value={amount(data?.vendor_tds_to_deposit)} sub={tdsSub} />
         </div>
 
         <div className="flex flex-col gap-5">
@@ -76,9 +77,9 @@ export default function TaxationPage() {
 function TabIntro({ tab, summary }: { tab: TabKey; summary: TaxationSummary | null }) {
   const s = summary;
   const text: Record<TabKey, string> = {
-    sales: `GST charged on tax invoices issued this month (output GST).${s ? ` CGST ${formatINR(s.output_gst.cgst)}, SGST ${formatINR(s.output_gst.sgst)}, IGST ${formatINR(s.output_gst.igst)}.` : ""}`,
+    sales: `GST charged on tax invoices issued this month (output GST).${s ? ` CGST ${formatINR(s.output_gst.cgst)}, SGST ${formatINR(s.output_gst.sgst)}, IGST ${formatINR(s.output_gst.igst)}.` : ""} Paid and pending split each invoice into principal and GST in proportion; client TDS counts as paid.`,
     purchases: "GST on vendor bills. It reduces the GST you pay only when the vendor has a GSTIN.",
-    "client-tds": `TDS clients deducted from their payments to us${s ? ` (${formatINR(s.client_tds_deducted)})` : ""}. Collect each client's Form 16A so the credit can be claimed in our return.`,
+    "client-tds": `TDS clients deducted from what they paid us${s ? ` (${formatINR(s.client_tds_deducted)})` : ""}. Collect each client's Form 16A so the credit can be claimed in our return.`,
     "vendor-tds": `TDS we deducted from vendor bills${s ? ` (${formatINR(s.vendor_tds_deducted)}, ${formatINR(s.vendor_tds_deposited)} deposited)` : ""}. Deposit it with the government by the due date and record the challan.`,
   };
   return <p className="text-sm font-light text-secondary">{text[tab]}</p>;

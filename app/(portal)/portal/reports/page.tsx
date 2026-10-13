@@ -13,6 +13,7 @@ import { api, ApiError, type VendorReport, type Client } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
+import { NAME_MAX, TEXT_MAX } from "@/lib/validation";
 
 export default function ReportsPage() {
   const [month] = useMonth();
@@ -55,7 +56,7 @@ export default function ReportsPage() {
           }
         />
 
-        {error && <p className="text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="text-sm text-danger">⚠ {error}</p>}
 
         {data && data.length > 0 ? (
           <Table head={["Project", "Period", "Type", "Status", ""]}>
@@ -128,13 +129,13 @@ function ReportForm({ open, onOpenChange, clients, onSaved }: { open: boolean; o
     <Modal open={open} onOpenChange={onOpenChange} title="Upload vendor report" description="Record a report received from a vendor.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Project name">
-          <input name="project_name" required className={inputClass} />
+          <input name="project_name" maxLength={NAME_MAX} required className={inputClass} />
         </Field>
         <Field label="Reporting period">
-          <input name="reporting_period" placeholder="Q3 2026" className={inputClass} />
+          <input name="reporting_period" maxLength={NAME_MAX} placeholder="Q3 2026" className={inputClass} />
         </Field>
         <Field label="Report type">
-          <input name="report_type" placeholder="Research / Performance" className={inputClass} />
+          <input name="report_type" maxLength={NAME_MAX} placeholder="Research / Performance" className={inputClass} />
         </Field>
         <Field label="Client (for delivery)">
           <Select
@@ -148,15 +149,15 @@ function ReportForm({ open, onOpenChange, clients, onSaved }: { open: boolean; o
         </Field>
         <div className="sm:col-span-2">
           <Field label="File reference / link">
-            <input name="uploaded_file" className={inputClass} />
+            <input name="uploaded_file" maxLength={TEXT_MAX} className={inputClass} />
           </Field>
         </div>
         <div className="sm:col-span-2">
           <Field label="Remarks">
-            <input name="remarks" className={inputClass} />
+            <input name="remarks" maxLength={TEXT_MAX} className={inputClass} />
           </Field>
         </div>
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button type="submit" magnetic={false} disabled={saving}>{saving ? "Saving…" : "Save report"}</Button>

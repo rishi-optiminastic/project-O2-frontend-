@@ -13,20 +13,94 @@ const rowReveal = {
 };
 
 /** Monochrome status pill — tone derived from semantic state, but stays grayscale. */
-export function StatusPill({ status }: { status: string }) {
-  const s = status.toLowerCase();
-  let dot = "bg-secondary";
-  if (/(paid|approved|reconcil|verified|matched|completed|released|ready|sent to client)/.test(s))
-    dot = "bg-foreground";
-  else if (/(reject|mismatch|overdue|cancel|dispute)/.test(s)) dot = "bg-ink-40";
-  else if (/(pending|draft|submitted|review|partial|progress|not started|due)/.test(s)) dot = "bg-silver";
+export type Tone = "success" | "warning" | "danger" | "info" | "neutral";
 
+const TONE_CLASSES: Record<Tone, { pill: string; dot: string }> = {
+  success: { pill: "border-success-line bg-success-soft text-success", dot: "bg-success" },
+  warning: { pill: "border-warning-line bg-warning-soft text-warning", dot: "bg-warning" },
+  danger: { pill: "border-danger-line bg-danger-soft text-danger", dot: "bg-danger" },
+  info: { pill: "border-info-line bg-info-soft text-info", dot: "bg-info" },
+  neutral: { pill: "border-line bg-white/60 text-foreground/70", dot: "bg-ink-40" },
+};
+
+const TONE_RINGS: Record<Tone, string> = {
+  success: "ring-success-soft",
+  warning: "ring-warning-soft",
+  danger: "ring-danger-soft",
+  info: "ring-info-soft",
+  neutral: "ring-mist",
+};
+
+/** Every status the API sends, by meaning. Unknown ones fall back to a keyword match. */
+const STATUS_TONES: Record<string, Tone> = {
+  // Invoices
+  Draft: "neutral",
+  "Awaiting Client": "warning",
+  "Changes Requested": "danger",
+  "Client Approved": "info",
+  Sent: "info",
+  Pending: "warning",
+  "Partially Paid": "warning",
+  "Fully Paid": "success",
+  Overdue: "danger",
+  Cancelled: "danger",
+  Disputed: "danger",
+  Reconciled: "success",
+  // Payment approvals
+  "Submitted for CFO Approval": "warning",
+  "CFO Approved": "info",
+  "CFO Rejected": "danger",
+  "Submitted for CEO Approval": "warning",
+  "CEO Approved": "info",
+  "CEO Rejected": "danger",
+  "Payment Ready": "info",
+  "Payment Released": "success",
+  "Payment Verified": "success",
+  // Vendors, reports, work, verification, invitations
+  "Under Review": "warning",
+  Verified: "success",
+  Rejected: "danger",
+  "Not Started": "neutral",
+  "In Progress": "info",
+  "Report Due": "warning",
+  Completed: "success",
+  "On Hold": "neutral",
+  Submitted: "warning",
+  Approved: "success",
+  "Sent to Client": "success",
+  "Not Verified": "neutral",
+  "Statement Uploaded": "info",
+  "Auto-Matched": "success",
+  "Manually Matched": "success",
+  "Mismatch Found": "danger",
+  Accepted: "success",
+  Revoked: "danger",
+};
+
+export function statusTone(status: string): Tone {
+  const known = STATUS_TONES[status];
+  if (known) return known;
+  const s = status.toLowerCase();
+  if (/(paid|approved|reconcil|verified|matched|completed|released|received|deposited)/.test(s)) return "success";
+  if (/(reject|mismatch|overdue|cancel|dispute|revoked)/.test(s)) return "danger";
+  if (/(pending|submitted|review|partial|due|awaiting)/.test(s)) return "warning";
+  if (/(sent|progress|ready|issued)/.test(s)) return "info";
+  return "neutral";
+}
+
+/** Small tinted label. Use a tone only when the color means something. */
+export function Badge({ tone = "neutral", dot = true, children, className }: { tone?: Tone; dot?: boolean; children: ReactNode; className?: string }) {
+  const t = TONE_CLASSES[tone];
   return (
-    <span className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-line bg-white/60 px-3 py-1 text-xs font-medium text-foreground/80">
-      <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />
-      {status}
+    <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium", t.pill, className)}>
+      {dot && <span className={cn("h-1.5 w-1.5 rounded-full", t.dot)} />}
+      {children}
     </span>
   );
+}
+
+export function StatusPill({ status }: { status: string }) {
+  return <Badge tone={statusTone(status)} className="px-3 py-1">{status}</Badge>;
 }
 
 export function PageHeading({
@@ -106,6 +180,7 @@ export function MetricCard({
   delta,
   sub,
   spark,
+  tone,
 }: {
   label: string;
   value: ReactNode;
@@ -114,10 +189,15 @@ export function MetricCard({
   sub?: string;
   /** Optional trend series. Pass only real data for this metric - never a placeholder series. */
   spark?: number[];
+  /** Marks what the figure means right now, e.g. warning when something waits on someone. */
+  tone?: Tone;
 }) {
   return (
     <div className={cn(CARD, "flex flex-col p-6")}>
-      <p className="text-[11px] tracking-eyebrow text-secondary">{label}</p>
+      <p className="flex items-center gap-2 text-[11px] tracking-eyebrow text-secondary">
+        {tone && <span className={cn("h-2 w-2 rounded-full ring-4", TONE_CLASSES[tone].dot, TONE_RINGS[tone])} />}
+        {label}
+      </p>
       <p className="mt-3 text-3xl font-light tracking-tight tabular-nums">
         {value}
         {unit && <span className="ml-1.5 align-baseline text-xs font-normal text-ink-40">{unit}</span>}

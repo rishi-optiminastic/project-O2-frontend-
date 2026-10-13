@@ -8,11 +8,13 @@ import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Select } from "@/components/portal/Select";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
+import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
 import { api, ApiError, PROFORMA_STAGES, type Invoice, type Client, type AgentOption, type Service } from "@/lib/api";
 import { ServiceSelect } from "@/components/portal/ServiceSelect";
 import { AgentSelect } from "@/components/portal/AgentSelect";
 import { formatINR } from "@/lib/utils";
 import { monthEndISO } from "@/lib/invoice";
+import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES, futureDateRule } from "@/lib/validation";
 import { useMonth, withMonth } from "@/lib/month";
 
 /** Filter options, in lifecycle order: proforma stages first, then the issued tax invoice. */
@@ -47,6 +49,7 @@ export function OverviewTab() {
   }, [search, status, clientId, month]);
 
   const { data, loading, refetch } = useApi<Invoice[]>(path);
+  usePortalEvent(PORTAL_EVENTS.receiptRecorded, refetch);
 
   const clientName = (id: number) => clients?.find((c) => c.id === id)?.business_name ?? `Client #${id}`;
 
@@ -348,26 +351,26 @@ function CreateInvoice({
           </Field>
         </div>
         <Field label="SAC code (GST service code)">
-          <input key={`sac-${service?.id}`} name="sac_code" defaultValue={service?.sac_code ?? ""} className={inputClass} />
+          <input key={`sac-${service?.id}`} name="sac_code" {...FIELD_RULES.sac} defaultValue={service?.sac_code ?? ""} className={inputClass} />
         </Field>
         <Field label="Due date (default: end of month)">
-          <input name="due_date" type="date" defaultValue={monthEndISO()} className={inputClass} />
+          <input name="due_date" {...futureDateRule()} defaultValue={monthEndISO()} className={inputClass} />
         </Field>
         <Field label="Taxable value (₹)">
           <input
             name="taxable_value"
-            type="number"
-            step="0.01"
+            {...NUMBER_RULES.positiveMoney}
+            required
             value={taxable}
             onChange={(e) => setTaxable(Number(e.target.value))}
             className={inputClass}
           />
         </Field>
         <Field label="GST rate (%)">
-          <input name="gst_rate" type="number" step="0.01" value={rate} onChange={(e) => setRate(Number(e.target.value))} className={inputClass} />
+          <Select name="gst_rate" value={String(rate)} onValueChange={(v) => setRate(Number(v))} options={GST_RATE_OPTIONS} />
         </Field>
         <Field label="TDS the client deducts (%) · 10% for professional fees">
-          <input name="tds_rate" type="number" step="0.01" min={0} defaultValue={DEFAULT_TDS_RATE} className={inputClass} />
+          <input name="tds_rate" {...NUMBER_RULES.tdsRate} defaultValue={DEFAULT_TDS_RATE} className={inputClass} />
         </Field>
         <div className="flex items-end gap-4">
           <label className="flex items-center gap-2 text-sm font-light text-secondary">
@@ -405,7 +408,7 @@ function CreateInvoice({
           </div>
         </div>
 
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel

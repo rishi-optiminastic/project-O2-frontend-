@@ -29,6 +29,7 @@ import { api, ApiError, type Client, type Invoice, type Agent, type AgentOption 
 import { documentDate } from "@/lib/invoice";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
+import { FIELD_RULES, NAME_MAX, TEXT_MAX } from "@/lib/validation";
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -229,36 +230,36 @@ function ClientEditForm({
     <Modal open={open} onOpenChange={onOpenChange} title="Edit client" description="Update the client's onboarding details.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Business name">
-          <input name="business_name" required defaultValue={client.business_name} className={inputClass} />
+          <input name="business_name" maxLength={NAME_MAX} required defaultValue={client.business_name} className={inputClass} />
         </Field>
         <Field label="Registered legal name">
-          <input name="legal_name" defaultValue={client.legal_name ?? ""} className={inputClass} />
+          <input name="legal_name" maxLength={NAME_MAX} defaultValue={client.legal_name ?? ""} className={inputClass} />
         </Field>
         <Field label="Official email">
           <input name="email" type="email" required defaultValue={client.email} className={inputClass} />
         </Field>
         <Field label="Phone">
-          <input name="phone" defaultValue={client.phone ?? ""} className={inputClass} />
+          <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={client.phone ?? ""} className={inputClass} />
         </Field>
         <GstField defaultValue={client.gst_number} />
         <Field label="COI">
-          <input name="coi" defaultValue={client.coi ?? ""} className={inputClass} />
+          <input name="coi" {...FIELD_RULES.cin} defaultValue={client.coi ?? ""} className={inputClass} />
         </Field>
         <Field label="Category">
-          <input name="category" defaultValue={client.category ?? ""} placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
+          <input name="category" maxLength={NAME_MAX} defaultValue={client.category ?? ""} placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
         </Field>
         <Field label="Referral agent">
           <AgentSelect options={agents} defaultValue={client.agent_id} />
         </Field>
         <Field label="Billing address">
-          <input name="billing_address" defaultValue={client.billing_address ?? ""} className={inputClass} />
+          <input name="billing_address" maxLength={TEXT_MAX} defaultValue={client.billing_address ?? ""} className={inputClass} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Notes / special instructions">
-            <textarea name="notes" rows={2} defaultValue={client.notes ?? ""} className={inputClass + " h-auto py-2.5"} />
+            <textarea name="notes" maxLength={TEXT_MAX} rows={2} defaultValue={client.notes ?? ""} className={inputClass + " h-auto py-2.5"} />
           </Field>
         </div>
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel

@@ -27,6 +27,7 @@ import { api, ApiError, type Agent, type Client, type Invoice } from "@/lib/api"
 import { documentDate } from "@/lib/invoice";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
+import { FIELD_RULES, NAME_MAX, NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
 
 export default function AgentDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -215,19 +216,18 @@ function AgentEditForm({
     <Modal open={open} onOpenChange={onOpenChange} title="Edit agent" description="Name, contact details and commission.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Agent name">
-          <input name="business_name" required defaultValue={agent.business_name} className={inputClass} />
+          <input name="business_name" maxLength={NAME_MAX} required defaultValue={agent.business_name} className={inputClass} />
         </Field>
         <Field label="Email">
           <input name="email" type="email" required defaultValue={agent.email} className={inputClass} />
         </Field>
         <Field label="Phone">
-          <input name="phone" defaultValue={agent.phone ?? ""} className={inputClass} />
+          <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={agent.phone ?? ""} className={inputClass} />
         </Field>
         <Field label={agent.is_house ? "Commission rate (%) · fixed at 0 for the in-house agent" : "Commission rate (%)"}>
           <input
             name="commission_rate"
-            type="number"
-            step="0.01"
+            {...NUMBER_RULES.percent}
             defaultValue={agent.commission_rate}
             readOnly={agent.is_house}
             aria-readonly={agent.is_house}
@@ -236,10 +236,10 @@ function AgentEditForm({
         </Field>
         <div className="sm:col-span-2">
           <Field label="Address">
-            <input name="address" defaultValue={agent.address ?? ""} className={inputClass} />
+            <input name="address" maxLength={TEXT_MAX} defaultValue={agent.address ?? ""} className={inputClass} />
           </Field>
         </div>
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
@@ -275,7 +275,7 @@ function MouDownload({ agent }: { agent: Agent }) {
       <Button size="sm" variant="secondary" magnetic={false} onClick={download} disabled={busy}>
         <FileDown className="h-4 w-4" /> {busy ? "Preparing…" : "Download MOU (PDF)"}
       </Button>
-      {error && <p role="alert" className="max-w-xs text-right text-xs text-foreground/80">⚠ {error}</p>}
+      {error && <p role="alert" className="max-w-xs text-right text-xs text-danger">⚠ {error}</p>}
     </div>
   );
 }

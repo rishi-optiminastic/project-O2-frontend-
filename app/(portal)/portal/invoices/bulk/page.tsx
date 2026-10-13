@@ -90,7 +90,7 @@ export default function BulkInvoicesPage() {
         />
 
         {error && (
-          <p role="alert" className="text-sm text-foreground/80">
+          <p role="alert" className="text-sm text-danger">
             ⚠ {error}
           </p>
         )}
@@ -265,7 +265,7 @@ function PreviewRow({ row }: { row: BulkRow }) {
       <Cell className="text-ink-40">{row.due_date ? formatDate(row.due_date) : "Month end"}</Cell>
       <Cell className="min-w-[240px] max-w-[320px] whitespace-normal">
         {failed ? (
-          <ul className="flex flex-col gap-1 text-xs text-foreground">
+          <ul className="flex flex-col gap-1 text-xs text-danger">
             {row.errors.map((e) => (
               <li key={e}>⚠ {e}</li>
             ))}

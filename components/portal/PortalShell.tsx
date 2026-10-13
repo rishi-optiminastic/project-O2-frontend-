@@ -29,6 +29,7 @@ import { FloatingOrb } from "@/components/orb/FloatingOrb";
 import { Logo } from "@/components/ui/Logo";
 import { GridLoader } from "@/components/ui/GridLoader";
 import { GlobalSearch } from "@/components/portal/GlobalSearch";
+import { MoneyFab } from "@/components/portal/MoneyFab";
 import { cn } from "@/lib/utils";
 
 const navGroups = [
@@ -271,7 +272,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
             })}
           </div>
 
-          <main className="px-5 py-8 md:px-10 md:py-12">
+          {/* Bottom padding keeps the last rows clear of the floating Record button. */}
+          <main className="px-5 pb-28 pt-8 md:px-10 md:pb-32 md:pt-12">
             <motion.div
               key={pathname}
               initial={{ opacity: 0, y: 16, filter: "blur(6px)" }}
@@ -284,6 +286,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </main>
         </div>
       </div>
+      <MoneyFab />
     </div>
   );
 }

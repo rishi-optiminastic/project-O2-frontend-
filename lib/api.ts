@@ -1,5 +1,7 @@
 /** Typed client for the Project O2 FastAPI backend. */
 
+import { describeValidationErrors } from "@/lib/validation";
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8009/api";
 
 /** Only emails on this domain may sign up or be invited (mirrors backend WORKSPACE_EMAIL_DOMAIN). */
@@ -47,15 +49,24 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (res.status === 204) return undefined as T;
 
   const text = await res.text();
-  const data = text ? JSON.parse(text) : null;
-
   if (!res.ok) {
-    const detail =
-      (data && (typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail))) ||
-      res.statusText;
-    throw new ApiError(res.status, detail);
+    // A proxy or crash page is not JSON; fall back to the status line.
+    const detail = (() => {
+      try {
+        return errorMessage(JSON.parse(text).detail);
+      } catch {
+        return "";
+      }
+    })();
+    throw new ApiError(res.status, detail || res.statusText || "Request failed");
   }
-  return data as T;
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+function errorMessage(detail: unknown): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) return describeValidationErrors(detail);
+  return detail ? JSON.stringify(detail) : "";
 }
 
 export const api = {
@@ -74,7 +85,7 @@ export const api = {
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, typeof d.detail === "string" ? d.detail : "Download failed");
+      throw new ApiError(res.status, errorMessage(d.detail) || "Download failed");
     }
     const url = URL.createObjectURL(await res.blob());
     const link = document.createElement("a");
@@ -93,7 +104,8 @@ export const api = {
     });
     if (!res.ok) {
       const d = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, d.detail ?? "Login failed");
+      const fallback = res.status >= 500 ? "The server is not responding. Try again in a minute." : "Login failed";
+      throw new ApiError(res.status, errorMessage(d.detail) || fallback);
     }
     return (await res.json()) as { access_token: string; token_type: string };
   },
@@ -537,9 +549,6 @@ export interface VendorInvoice {
   status: string;
 }
 
-/** GST slabs a vendor bill can carry. */
-export const VENDOR_GST_RATES = [0, 5, 12, 18, 28] as const;
-
 /** TDS we deduct from vendor bills, by section. Mirrors TDS_SECTIONS in the backend. */
 export const TDS_SECTIONS = [
   { key: "194C_FIRM", label: "194C contractor (company / firm)", rate: 2 },
@@ -641,6 +650,11 @@ export interface SalesGstRow {
   igst: number;
   gst_amount: number;
   total_amount: number;
+  /** Settled (cash plus client TDS) and still due, split into principal and GST pro rata. */
+  paid_principal: number;
+  paid_gst: number;
+  pending_principal: number;
+  pending_gst: number;
 }
 
 export interface PurchaseGstRow {

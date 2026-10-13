@@ -209,7 +209,7 @@ function PendingInviteRow({ invite, onChanged }: { invite: Invitation; onChanged
         </p>
       )}
       {emailSent === false && link && (
-        <p className="mt-3 text-xs text-foreground/70">
+        <p className="mt-3 text-xs text-warning">
           ⚠ Email isn&apos;t configured — copy the link above and share it with {invite.name} directly.
         </p>
       )}
@@ -285,7 +285,7 @@ function InviteMember({
             />
           </Field>
         </div>
-        {error && <p className="sm:col-span-2 text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel

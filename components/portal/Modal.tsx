@@ -52,8 +52,8 @@ export function Modal({
                 <X className="h-4 w-4" />
               </Dialog.Close>
             </div>
-            {/* Scrollable body */}
-            <div className="overflow-y-auto px-7 py-6">{children}</div>
+            {/* Scrollable body. A footer pins to its bottom edge, so it drops the bottom padding. */}
+            <div className="overflow-y-auto px-7 py-6 has-[[data-modal-footer]]:pb-0">{children}</div>
           </motion.div>
         </Dialog.Content>
       </Dialog.Portal>
@@ -68,7 +68,7 @@ export function Modal({
  */
 export function ModalFooter({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky bottom-0 -mx-7 -mb-6 mt-6 flex justify-end gap-3 border-t border-line/50 bg-white/80 px-7 py-4 backdrop-blur-md col-span-full">
+    <div data-modal-footer className="sticky bottom-0 -mx-7 mt-6 flex justify-end gap-3 border-t border-line/50 bg-white/80 px-7 py-4 backdrop-blur-md col-span-full">
       {children}
     </div>
   );

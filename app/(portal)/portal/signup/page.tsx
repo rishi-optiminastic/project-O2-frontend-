@@ -148,7 +148,7 @@ export default function SignupPage() {
                 />
               </Field>
 
-              {error && <p className="text-sm text-foreground/80">⚠ {error}</p>}
+              {error && <p className="text-sm text-danger">⚠ {error}</p>}
 
               <Button
                 type="submit"

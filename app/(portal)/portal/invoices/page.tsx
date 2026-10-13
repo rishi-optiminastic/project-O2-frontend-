@@ -13,14 +13,14 @@ type TabKey = "overview" | "received";
 
 export default function InvoicesPage() {
   const { hasRole } = useAuth();
-  // Payment Received (TDS/GST) is NON_EXEC-only, mirroring the server guard on
+  // Receipts (TDS/GST) is NON_EXEC-only, mirroring the server guard on
   // /taxation/*. Outgoing payouts live on the Approvals page.
   const canFinance = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
   const [tab, setTab] = useState<TabKey>("overview");
 
   const tabs: TabItem<TabKey>[] = [
     { key: "overview", label: "Overview" },
-    ...(canFinance ? [{ key: "received" as const, label: "Payment Received" }] : []),
+    ...(canFinance ? [{ key: "received" as const, label: "Receipts" }] : []),
   ];
 
   const active: TabKey = tabs.some((t) => t.key === tab) ? tab : "overview";
@@ -30,7 +30,7 @@ export default function InvoicesPage() {
       <div className="flex flex-col gap-8">
         <PageHeading
           title="Client Invoices"
-          description="A single source of truth. Invoices lock automatically once a payment is recorded."
+          description="A single source of truth. Invoices lock automatically once a receipt is recorded."
           action={<MonthFilter />}
         />
 

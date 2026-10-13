@@ -1,24 +1,40 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2 } from "lucide-react";
-import { Table, Row, Cell, Empty, Field, inputClass } from "@/components/portal/ui";
+import { Table, Row, Cell, Empty, Field, inputClass, Badge } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { withMonth } from "@/lib/month";
 import { formatDate, formatINR } from "@/lib/utils";
+import { FIELD_RULES, pastDateRule } from "@/lib/validation";
 import { api, ApiError, type ClientTdsRow, type PurchaseGstRow, type SalesGstRow, type VendorTdsRow } from "@/lib/api";
 
 const money = (v: number | null) => (v === null ? "-" : formatINR(v));
+
+/** Amount columns of the sales register, totalled in its last row. */
+const SALES_AMOUNTS = ["taxable_value", "gst_amount", "paid_principal", "paid_gst", "pending_principal", "pending_gst", "total_amount"] as const;
+
+/** The intra-state CGST + SGST split, or IGST for another state. */
+function gstSplit(r: SalesGstRow): string {
+  return r.igst ? `${r.gst_rate}% IGST` : `${r.gst_rate}% · CGST ${formatINR(r.cgst)} + SGST ${formatINR(r.sgst)}`;
+}
+
+/** Paid figures show green once something is paid; pending ones amber while anything is due. */
+const paidClass = (v: number) => (v > 0 ? "tabular-nums text-success" : "tabular-nums text-ink-40");
+const pendingClass = (v: number) => (v > 0 ? "tabular-nums font-medium text-warning" : "tabular-nums text-ink-40");
 
 export function SalesGstTab({ month }: { month: string }) {
   const { data, loading } = useApi<SalesGstRow[]>(withMonth("/taxation/gst/sales", month));
   if (!data?.length) {
     return <Empty message={loading ? "Loading…" : "No tax invoices issued in this month."} />;
   }
+  const totals = Object.fromEntries(
+    SALES_AMOUNTS.map((key) => [key, data.reduce((sum, r) => sum + r[key], 0)]),
+  ) as Record<(typeof SALES_AMOUNTS)[number], number>;
+
   return (
-    <Table head={["Invoice", "Client", "Taxable", "CGST", "SGST", "IGST", "GST", "Total"]}>
+    <Table head={["Invoice", "Client", "Principal amount", "Principal GST", "Paid amount", "Paid GST", "Pending amount", "Pending GST", "Total"]}>
       {data.map((r) => (
         <Row key={r.invoice_id}>
           <Cell className="font-medium">
@@ -30,16 +46,28 @@ export function SalesGstTab({ month }: { month: string }) {
             <span className="block font-mono text-xs text-ink-40">{r.client_gstin ?? "No GSTIN"}</span>
           </Cell>
           <Cell className="tabular-nums">{formatINR(r.taxable_value)}</Cell>
-          <Cell className="tabular-nums text-ink-40">{formatINR(r.cgst)}</Cell>
-          <Cell className="tabular-nums text-ink-40">{formatINR(r.sgst)}</Cell>
-          <Cell className="tabular-nums text-ink-40">{formatINR(r.igst)}</Cell>
           <Cell className="tabular-nums font-medium">
             {formatINR(r.gst_amount)}
-            <span className="block text-xs font-light text-ink-40">{r.gst_rate}%</span>
+            <span className="block whitespace-nowrap text-xs font-light text-ink-40">{gstSplit(r)}</span>
           </Cell>
+          <Cell className={paidClass(r.paid_principal)}>{formatINR(r.paid_principal)}</Cell>
+          <Cell className={paidClass(r.paid_gst)}>{formatINR(r.paid_gst)}</Cell>
+          <Cell className={pendingClass(r.pending_principal)}>{formatINR(r.pending_principal)}</Cell>
+          <Cell className={pendingClass(r.pending_gst)}>{formatINR(r.pending_gst)}</Cell>
           <Cell className="tabular-nums">{formatINR(r.total_amount)}</Cell>
         </Row>
       ))}
+      <Row>
+        <Cell className="font-medium">Total</Cell>
+        <Cell className="text-ink-40">{data.length} invoices</Cell>
+        <Cell className="tabular-nums font-medium">{formatINR(totals.taxable_value)}</Cell>
+        <Cell className="tabular-nums font-medium">{formatINR(totals.gst_amount)}</Cell>
+        <Cell className={`${paidClass(totals.paid_principal)} font-medium`}>{formatINR(totals.paid_principal)}</Cell>
+        <Cell className={`${paidClass(totals.paid_gst)} font-medium`}>{formatINR(totals.paid_gst)}</Cell>
+        <Cell className={pendingClass(totals.pending_principal)}>{formatINR(totals.pending_principal)}</Cell>
+        <Cell className={pendingClass(totals.pending_gst)}>{formatINR(totals.pending_gst)}</Cell>
+        <Cell className="tabular-nums font-medium">{formatINR(totals.total_amount)}</Cell>
+      </Row>
     </Table>
   );
 }
@@ -71,11 +99,11 @@ export function PurchaseGstTab({ month }: { month: string }) {
           </Cell>
           <Cell className="text-xs">
             {r.itc_eligible ? (
-              <span className="inline-flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5" /> Claimable
-              </span>
+              <Badge tone="success">Claimable</Badge>
+            ) : r.vendor_gstin ? (
+              <span className="text-ink-40">No GST charged</span>
             ) : (
-              <span className="text-ink-40">{r.vendor_gstin ? "No GST charged" : "Not claimable: vendor has no GSTIN"}</span>
+              <Badge tone="warning">Not claimable: no GSTIN</Badge>
             )}
           </Cell>
         </Row>
@@ -88,11 +116,11 @@ export function ClientTdsTab({ month, onChanged }: { month: string; onChanged: (
   const { data, loading, refetch } = useApi<ClientTdsRow[]>(withMonth("/taxation/tds/clients", month));
   const [editing, setEditing] = useState<ClientTdsRow | null>(null);
   if (!data?.length) {
-    return <Empty message={loading ? "Loading…" : "No client deducted TDS from a payment in this month."} />;
+    return <Empty message={loading ? "Loading…" : "No client deducted TDS from a receipt in this month."} />;
   }
   return (
     <>
-      <Table head={["Payment", "Invoice", "Client", "TDS deducted", "Form 16A", ""]}>
+      <Table head={["Received on", "Invoice", "Client", "TDS deducted", "Form 16A", ""]}>
         {data.map((r) => (
           <Row key={r.payment_id}>
             <Cell className="text-ink-40">{formatDate(r.payment_date)}</Cell>
@@ -102,11 +130,12 @@ export function ClientTdsTab({ month, onChanged }: { month: string; onChanged: (
             <Cell className="text-xs">
               {r.certificate_number ? (
                 <>
-                  <span className="font-mono">{r.certificate_number}</span>
-                  <span className="block text-ink-40">Received {r.certificate_date ? formatDate(r.certificate_date) : ""}</span>
+                  <Badge tone="success">Received</Badge>
+                  <span className="mt-1 block font-mono">{r.certificate_number}</span>
+                  <span className="block text-ink-40">{r.certificate_date ? formatDate(r.certificate_date) : ""}</span>
                 </>
               ) : (
-                <span className="font-medium">⚠ Not received yet</span>
+                <Badge tone="warning">Not received yet</Badge>
               )}
             </Cell>
             <Cell>
@@ -123,6 +152,7 @@ export function ClientTdsTab({ month, onChanged }: { month: string; onChanged: (
           description={`${editing.client_name} deducted ${formatINR(editing.tds_deducted)} on ${editing.invoice_number}. Their TDS certificate lets us claim this credit.`}
           numberLabel="Certificate number"
           dateLabel="Certificate date"
+          minDate={editing.payment_date}
           initialNumber={editing.certificate_number}
           initialDate={editing.certificate_date}
           onClose={() => setEditing(null)}
@@ -163,18 +193,19 @@ export function VendorTdsTab({ month, onChanged }: { month: string; onChanged: (
               <span className="block text-xs">{r.tds_rate}%</span>
             </Cell>
             <Cell className="tabular-nums font-medium">{formatINR(r.tds_amount)}</Cell>
-            <Cell className={r.overdue ? "font-medium" : "text-ink-40"}>
+            <Cell className={r.overdue ? "font-medium text-danger" : "text-ink-40"}>
               {formatDate(r.due_date)}
-              {r.overdue && <span className="block text-xs">⚠ Overdue</span>}
+              {r.overdue && <Badge tone="danger" className="mt-1 flex w-fit">Overdue</Badge>}
             </Cell>
             <Cell className="text-xs">
               {r.challan_number ? (
                 <>
-                  <span className="font-mono">{r.challan_number}</span>
+                  <Badge tone="success">Deposited</Badge>
+                  <span className="mt-1 block font-mono">{r.challan_number}</span>
                   <span className="block text-ink-40">{r.deposited_on ? formatDate(r.deposited_on) : ""}</span>
                 </>
               ) : (
-                <span className="text-ink-40">Not yet</span>
+                <Badge tone={r.overdue ? "danger" : "warning"}>Not yet</Badge>
               )}
             </Cell>
             <Cell>
@@ -191,6 +222,7 @@ export function VendorTdsTab({ month, onChanged }: { month: string; onChanged: (
           description={`${formatINR(editing.tds_amount)} deducted from ${editing.vendor_name}'s bill ${editing.invoice_number}, due by ${formatDate(editing.due_date)}.`}
           numberLabel="Challan number"
           dateLabel="Deposited on"
+          minDate={editing.invoice_date}
           initialNumber={editing.challan_number}
           initialDate={editing.deposited_on}
           onClose={() => setEditing(null)}
@@ -213,6 +245,7 @@ function RecordModal({
   description,
   numberLabel,
   dateLabel,
+  minDate,
   initialNumber,
   initialDate,
   onClose,
@@ -223,6 +256,8 @@ function RecordModal({
   description: string;
   numberLabel: string;
   dateLabel: string;
+  /** The date cannot be before this one: the payment or the bill it belongs to. */
+  minDate: string;
   initialNumber: string | null;
   initialDate: string | null;
   onClose: () => void;
@@ -256,12 +291,12 @@ function RecordModal({
     <Modal open onOpenChange={(v) => !v && onClose()} title={title} description={description}>
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label={numberLabel}>
-          <input name="number" required maxLength={60} defaultValue={initialNumber ?? ""} spellCheck={false} className={`${inputClass} font-mono`} />
+          <input name="number" required {...FIELD_RULES.taxDocument} defaultValue={initialNumber ?? ""} className={`${inputClass} font-mono`} />
         </Field>
         <Field label={dateLabel}>
-          <input name="date" type="date" required defaultValue={initialDate ?? ""} className={inputClass} />
+          <input name="date" {...pastDateRule()} min={minDate} required defaultValue={initialDate ?? ""} className={inputClass} />
         </Field>
-        {error && <p role="alert" className="col-span-full text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p role="alert" className="col-span-full text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           {initialNumber && (
             <Button type="button" variant="ghost" magnetic={false} disabled={saving} onClick={() => save(null, null)} className="mr-auto">

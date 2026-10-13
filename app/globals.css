@@ -3,7 +3,9 @@
 
 /* ============================================================
    PROJECT O2 — Design System Tokens
-   Monochrome, editorial, luxury. No bright colors.
+   Monochrome, editorial, luxury. Color only carries meaning:
+   soft status tones (success, warning, danger, info) on pills,
+   badges and flags, never on large surfaces.
    ============================================================ */
 
 @theme {
@@ -25,6 +27,20 @@
   --color-ink-40: rgba(17, 17, 17, 0.4);
   --color-ink-12: rgba(17, 17, 17, 0.12);
   --color-ink-06: rgba(17, 17, 17, 0.06);
+
+  /* Status tones: a soft fill, a readable ink and a hairline for each */
+  --color-success: #1f7a3d; /* paid, approved, done */
+  --color-success-soft: #e8f6ec;
+  --color-success-line: #c9e9d3;
+  --color-warning: #a8540a; /* waiting, pending, due soon */
+  --color-warning-soft: #fdf1e1;
+  --color-warning-line: #f4dbb6;
+  --color-danger: #c0392b; /* cancelled, rejected, overdue, errors */
+  --color-danger-soft: #fdeceb;
+  --color-danger-line: #f5cdc9;
+  --color-info: #2f5fb8; /* in progress, sent, with someone else */
+  --color-info-soft: #e9effc;
+  --color-info-line: #cddbf5;
 
   /* Typography */
   --font-sans: var(--font-inter), "SF Pro Display", system-ui, -apple-system, sans-serif;

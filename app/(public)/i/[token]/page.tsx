@@ -108,7 +108,7 @@ function ClientDecision({ path, onDone }: { path: string; onDone: () => void }) 
             <textarea name="comment" required maxLength={2000} rows={4} className={cn(inputClass, "h-auto py-2.5")} />
           </Field>
         )}
-        {error && <p role="alert" className="text-sm text-foreground/80">⚠ {error}</p>}
+        {error && <p role="alert" className="text-sm text-danger">⚠ {error}</p>}
         <div>
           <Button type="submit" size="sm" magnetic={false} disabled={busy}>
             {busy ? "Sending…" : mode === "approve" ? "Approve proforma" : "Send request"}

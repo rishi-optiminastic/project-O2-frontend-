@@ -5,36 +5,26 @@ import { Plus, X } from "lucide-react";
 import { Field, inputClass } from "@/components/portal/ui";
 import { GstField } from "@/components/portal/GstField";
 import type { Vendor, VendorBankAccount } from "@/lib/api";
+import { FIELD_RULES, NAME_MAX } from "@/lib/validation";
 
 const BANK_ACCOUNTS_FIELD = "bank_accounts";
 
 const EMPTY_ACCOUNT: VendorBankAccount = { account_holder: "", bank_name: "", account_number: "", ifsc_code: "" };
-
-// Format checks run in the browser so typos get a plain message; the API enforces the same rules.
-const PAN_PATTERN = "[A-Za-z]{5}[0-9]{4}[A-Za-z]";
-const UDYAM_PATTERN = "[Uu][Dd][Yy][Aa][Mm]-[A-Za-z]{2}-[0-9]{2}-[0-9]{7}";
 
 type AccountInput = {
   key: keyof Omit<VendorBankAccount, "id">;
   label: string;
   placeholder?: string;
   mono?: boolean;
-  pattern?: string;
-  title?: string;
+  // Format checks run in the browser so typos get a plain message; the API enforces the same rules.
+  rules: React.InputHTMLAttributes<HTMLInputElement>;
 };
 
 const ACCOUNT_INPUTS: AccountInput[] = [
-  { key: "account_holder", label: "Account holder" },
-  { key: "bank_name", label: "Bank name" },
-  { key: "account_number", label: "Account number", mono: true, pattern: "[0-9]{9,18}", title: "9 to 18 digits, no spaces" },
-  {
-    key: "ifsc_code",
-    label: "IFSC code",
-    placeholder: "HDFC0001234",
-    mono: true,
-    pattern: "[A-Za-z]{4}0[A-Za-z0-9]{6}",
-    title: "11 characters: 4 letters, a zero, then 6 letters or digits (e.g. HDFC0001234)",
-  },
+  { key: "account_holder", label: "Account holder", rules: { maxLength: NAME_MAX } },
+  { key: "bank_name", label: "Bank name", rules: { maxLength: NAME_MAX } },
+  { key: "account_number", label: "Account number", mono: true, rules: FIELD_RULES.accountNumber },
+  { key: "ifsc_code", label: "IFSC code", placeholder: "HDFC0001234", mono: true, rules: FIELD_RULES.ifsc },
 ];
 
 function isBlank(a: VendorBankAccount) {
@@ -65,13 +55,13 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
   return (
     <>
       <Field label="Vendor name">
-        <input name="business_name" required defaultValue={vendor?.business_name} className={inputClass} />
+        <input name="business_name" maxLength={NAME_MAX} required defaultValue={vendor?.business_name} className={inputClass} />
       </Field>
       <Field label="Email">
         <input name="email" type="email" required defaultValue={vendor?.email} className={inputClass} />
       </Field>
       <Field label="Phone">
-        <input name="phone" type="tel" defaultValue={vendor?.phone ?? ""} className={inputClass} />
+        <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={vendor?.phone ?? ""} className={inputClass} />
       </Field>
       <GstField defaultValue={vendor?.gst_number} />
       <Field label="MSME (Udyam number, if registered)">
@@ -79,26 +69,19 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
           name="msme_number"
           defaultValue={vendor?.msme_number ?? ""}
           placeholder="UDYAM-MH-00-0000000"
-          pattern={UDYAM_PATTERN}
-          title="Udyam number, e.g. UDYAM-MH-26-0012345"
-          autoCapitalize="characters"
-          spellCheck={false}
+          {...FIELD_RULES.udyam}
           className={`${inputClass} font-mono`}
         />
       </Field>
       <Field label="COI (Certificate of Incorporation)">
-        <input name="coi" defaultValue={vendor?.coi ?? ""} spellCheck={false} className={`${inputClass} font-mono`} />
+        <input name="coi" {...FIELD_RULES.cin} defaultValue={vendor?.coi ?? ""} className={`${inputClass} font-mono`} />
       </Field>
       <Field label="PAN">
         <input
           name="pan"
           defaultValue={vendor?.pan ?? ""}
           placeholder="AAAAA0000A"
-          maxLength={10}
-          pattern={PAN_PATTERN}
-          title="10 characters: 5 letters, 4 digits, 1 letter (e.g. AAAAA0000A)"
-          autoCapitalize="characters"
-          spellCheck={false}
+          {...FIELD_RULES.pan}
           className={`${inputClass} font-mono`}
         />
       </Field>
@@ -120,17 +103,15 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
                 </button>
               )}
             </div>
-            {ACCOUNT_INPUTS.map(({ key, label, placeholder, mono, pattern, title }) => (
+            {ACCOUNT_INPUTS.map(({ key, label, placeholder, mono, rules }) => (
               <Field key={key} label={label}>
                 <input
                   value={account[key]}
                   onChange={(e) => update(index, key, e.target.value)}
                   // An untouched account is skipped; a started one must be complete.
                   required={!isBlank(account)}
-                  pattern={pattern}
-                  title={title}
+                  {...rules}
                   placeholder={placeholder}
-                  spellCheck={false}
                   className={mono ? `${inputClass} font-mono` : inputClass}
                 />
               </Field>
