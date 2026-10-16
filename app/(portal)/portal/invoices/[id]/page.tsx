@@ -11,7 +11,7 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { api, ApiError, type Invoice, type Client, type AgentOption, type Project } from "@/lib/api";
-import { ProjectPicker, ProjectSummary, overContractWarning } from "@/components/portal/invoices/ProjectPicker";
+import { ProjectPicker, ProjectSummary, overContractError } from "@/components/portal/invoices/ProjectPicker";
 import {
   InterstateField,
   LinesEditor,
@@ -81,7 +81,8 @@ export default function InvoiceDetailPage() {
   const editTaxable = formProject ? editLines.reduce((sum, l) => sum + l.taxable_value, 0) : (legacyTaxable ?? invoice.taxable_value);
   // This invoice already counts in its own project's billed total.
   const ownShare = formProject && formProject.id === invoice.project_id && invoice.status !== "Cancelled" ? invoice.taxable_value : 0;
-  const editWarning = editing ? overContractWarning(formProject, editTaxable, ownShare) : null;
+  // Only a proforma is capped; an issued invoice keeps the amount it went out with.
+  const overContract = editing && !invoice.is_issued ? overContractError(formProject, editTaxable, ownShare) : null;
   const clientGstin = clients?.find((c) => c.id === (formProject?.client_id ?? invoice.client_id))?.gst_number;
 
   function toggleEditing() {
@@ -324,11 +325,11 @@ export default function InvoiceDetailPage() {
                     <InterstateField clientGstin={clientGstin} checked={interstate} onChange={setInterstate} />
                   </div>
                 )}
-                {editWarning && <p role="status" className="sm:col-span-2 text-sm text-warning">⚠ {editWarning}</p>}
+                {overContract && <p role="alert" className="sm:col-span-2 text-sm text-danger">⚠ {overContract}</p>}
                 {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
                 <div className="sm:col-span-2 flex justify-end gap-3">
                   <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={toggleEditing}>Cancel</Button>
-                  <Button type="submit" size="sm" magnetic={false} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
+                  <Button type="submit" size="sm" magnetic={false} disabled={saving || !!overContract}>{saving ? "Saving…" : "Save changes"}</Button>
                 </div>
               </form>
             </Panel>

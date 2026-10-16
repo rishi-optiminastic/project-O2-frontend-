@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
 import { api, ApiError, PROFORMA_STAGES, type Invoice, type Client, type Project } from "@/lib/api";
-import { ProjectPicker, ProjectSummary, overContractWarning } from "@/components/portal/invoices/ProjectPicker";
+import { ProjectPicker, ProjectSummary, overContractError } from "@/components/portal/invoices/ProjectPicker";
 import {
   InterstateField,
   LinesEditor,
@@ -240,7 +240,7 @@ function CreateInvoice({
   const clientGstin = clients.find((c) => c.id === project?.client_id)?.gst_number;
   const isInterstate = interstateFromGstin(clientGstin) ?? interstate;
   const lines = lineInputs(project, drafts);
-  const warning = overContractWarning(project, lines.reduce((sum, l) => sum + l.taxable_value, 0));
+  const overContract = overContractError(project, lines.reduce((sum, l) => sum + l.taxable_value, 0));
 
   function chooseProject(next: Project) {
     setProject(next);
@@ -322,7 +322,7 @@ function CreateInvoice({
             <InterstateField clientGstin={clientGstin} checked={interstate} onChange={setInterstate} />
           </div>
         )}
-        {warning && <p role="status" className="sm:col-span-2 text-sm text-warning">⚠ {warning}</p>}
+        {overContract && <p role="alert" className="sm:col-span-2 text-sm text-danger">⚠ {overContract}</p>}
 
         {/* Live GST preview with CGST/SGST/IGST split, per line at its service's rate */}
         {project && (
@@ -336,7 +336,7 @@ function CreateInvoice({
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="submit" magnetic={false} disabled={saving || !project}>
+          <Button type="submit" magnetic={false} disabled={saving || !project || !!overContract}>
             {saving ? "Saving…" : "Create proforma"}
           </Button>
         </ModalFooter>

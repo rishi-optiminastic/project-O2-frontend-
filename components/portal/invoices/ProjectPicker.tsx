@@ -129,10 +129,16 @@ function Item({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-/** A warning when this amount takes the project past its contract value; saving is still allowed. */
-export function overContractWarning(project: Project | undefined, amount: number, alreadyOnThisInvoice = 0): string | null {
+/**
+ * Why this amount cannot be billed: it takes the project past its contract value. The server refuses
+ * the same proforma, so the form blocks Save rather than letting the request fail.
+ */
+export function overContractError(project: Project | undefined, amount: number, alreadyOnThisInvoice = 0): string | null {
   if (!project || project.left_to_bill == null) return null;
   const left = project.left_to_bill + alreadyOnThisInvoice;
-  if (amount <= left) return null;
-  return `This takes ${project.code} ${formatINR(amount - left)} past its contract value of ${formatINR(project.contract_value)}. You can still save it.`;
+  if (amount <= left + CONTRACT_TOLERANCE) return null;
+  return `This takes ${project.code} ${formatINR(amount - left)} past its contract value of ${formatINR(project.contract_value)} (${formatINR(Math.max(left, 0))} left to bill). Lower the amount or raise the project's contract value.`;
 }
+
+/** Paise rounding on line totals must not trip the cap (matches the server). */
+const CONTRACT_TOLERANCE = 0.005;
