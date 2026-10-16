@@ -842,3 +842,25 @@ export interface BulkCreated {
   created: number;
   invoices: { id: number; proforma_number: string; client_id: number; total_amount: number }[];
 }
+
+/** One spreadsheet row of a bulk service upload, checked but not yet created. */
+export interface ServiceBulkRow {
+  row: number;
+  title: string;
+  sac_code: string | null;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface ServiceBulkPreview {
+  rows: ServiceBulkRow[];
+  /** True only when no row has an error; the upload is all or nothing. */
+  ready: boolean;
+  service_count: number;
+  error_count: number;
+}
+
+export interface ServiceBulkCreated {
+  created: number;
+  services: Service[];
+}

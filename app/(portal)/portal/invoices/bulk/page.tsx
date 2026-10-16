@@ -2,14 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Download, FileSpreadsheet, CheckCircle2, AlertTriangle, RotateCcw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, AlertTriangle, RotateCcw } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
+import { BulkUploadSteps, RowCheckNotes } from "@/components/portal/BulkUploadSteps";
 import { PageHeading, Panel, Table, Row, Cell, MetricCard } from "@/components/portal/ui";
 import { Button } from "@/components/ui/Button";
 import { api, ApiError, type BulkPreview, type BulkCreated, type BulkRow } from "@/lib/api";
 import { formatDate, formatINR } from "@/lib/utils";
-
-const ACCEPT = ".xlsx,.csv";
 
 type Stage =
   | { kind: "pick" }
@@ -24,7 +23,6 @@ export default function BulkInvoicesPage() {
   const [stage, setStage] = useState<Stage>({ kind: "pick" });
   const [error, setError] = useState<string | null>(null);
   const [problemsOnly, setProblemsOnly] = useState(false);
-  const [dragging, setDragging] = useState(false);
 
   async function check(file: File) {
     setError(null);
@@ -66,11 +64,6 @@ export default function BulkInvoicesPage() {
     setError(null);
   }
 
-  function onFiles(files: FileList | null) {
-    const file = files?.[0];
-    if (file) check(file);
-  }
-
   const preview = stage.kind === "preview" || stage.kind === "creating" ? stage.preview : null;
   const file = stage.kind === "pick" || stage.kind === "done" ? null : stage.file;
 
@@ -99,58 +92,14 @@ export default function BulkInvoicesPage() {
           <Done result={stage.result} onViewInvoices={() => router.push("/portal/invoices")} onAnother={startOver} />
         ) : (
           <>
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-              <Panel>
-                <p className="text-xs tracking-eyebrow text-secondary">Step 1</p>
-                <h2 className="mt-2 text-lg font-medium">Fill in the template</h2>
-                <p className="mt-2 text-sm font-light text-secondary">
-                  One row per invoice, named by project code. The template has a drop-down of your projects and a sheet
-                  explaining every column. The client comes from the project; name the service when a project bills several.
-                </p>
-                <Button size="sm" variant="secondary" magnetic={false} onClick={downloadTemplate} className="mt-5">
-                  <Download className="h-4 w-4" /> Download template (.xlsx)
-                </Button>
-              </Panel>
-
-              <Panel>
-                <p className="text-xs tracking-eyebrow text-secondary">Step 2</p>
-                <h2 className="mt-2 text-lg font-medium">Upload it to check</h2>
-                <label
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDragging(true);
-                  }}
-                  onDragLeave={() => setDragging(false)}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDragging(false);
-                    onFiles(e.dataTransfer.files);
-                  }}
-                  className={
-                    "mt-4 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border border-dashed px-4 py-8 text-center transition-colors " +
-                    (dragging ? "border-foreground/50 bg-mist" : "border-line hover:border-foreground/30")
-                  }
-                >
-                  <FileSpreadsheet className="h-6 w-6 text-ink-40" strokeWidth={1.6} />
-                  <span className="text-sm">
-                    {stage.kind === "checking" ? `Checking ${stage.file.name}…` : file ? file.name : "Drop the file here or click to choose"}
-                  </span>
-                  <span className="text-xs text-ink-40">Excel (.xlsx) or CSV, up to 500 rows</span>
-                  <input
-                    ref={inputRef}
-                    type="file"
-                    accept={ACCEPT}
-                    className="sr-only"
-                    disabled={stage.kind === "checking" || stage.kind === "creating"}
-                    onChange={(e) => {
-                      onFiles(e.target.files);
-                      // Cleared so choosing the same (now fixed) file again still triggers a check.
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-              </Panel>
-            </div>
+            <BulkUploadSteps
+              ref={inputRef}
+              templateHelp="One row per invoice, named by project code. The template has a drop-down of your projects and a sheet explaining every column. The client comes from the project; name the service when a project bills several."
+              onDownloadTemplate={downloadTemplate}
+              status={stage.kind === "checking" ? `Checking ${stage.file.name}…` : file ? file.name : null}
+              busy={stage.kind === "checking" || stage.kind === "creating"}
+              onFile={check}
+            />
 
             {preview && (
               <PreviewSection
@@ -241,7 +190,6 @@ function PreviewSection({
 }
 
 function PreviewRow({ row }: { row: BulkRow }) {
-  const failed = row.errors.length > 0;
   return (
     <Row>
       <Cell className="tabular-nums text-ink-40">{row.row}</Cell>
@@ -265,23 +213,7 @@ function PreviewRow({ row }: { row: BulkRow }) {
       <Cell className="tabular-nums">{row.total_amount !== null ? formatINR(row.total_amount) : "-"}</Cell>
       <Cell className="text-ink-40">{row.due_date ? formatDate(row.due_date) : "Month end"}</Cell>
       <Cell className="min-w-[240px] max-w-[320px] whitespace-normal">
-        {failed ? (
-          <ul className="flex flex-col gap-1 text-xs text-danger">
-            {row.errors.map((e) => (
-              <li key={e}>⚠ {e}</li>
-            ))}
-          </ul>
-        ) : row.warnings.length > 0 ? (
-          <ul className="flex flex-col gap-1 text-xs text-secondary">
-            {row.warnings.map((w) => (
-              <li key={w}>Check: {w}</li>
-            ))}
-          </ul>
-        ) : (
-          <span className="inline-flex items-center gap-1 text-xs text-secondary">
-            <CheckCircle2 className="h-3.5 w-3.5" /> OK
-          </span>
-        )}
+        <RowCheckNotes errors={row.errors} warnings={row.warnings} />
       </Cell>
     </Row>
   );

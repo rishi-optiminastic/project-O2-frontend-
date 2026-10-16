@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Layers } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Plus, Layers, FileSpreadsheet } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { PageHeading, Table, Row, Cell, Empty, Field, inputClass, StatusPill } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
@@ -14,6 +15,8 @@ import { FIELD_RULES } from "@/lib/validation";
 export default function ServicesPage() {
   const { data, loading, refetch } = useApi<Service[]>("/services?include_inactive=true");
   const [editing, setEditing] = useState<Service | "new" | null>(null);
+  const router = useRouter();
+  const services = data ?? [];
 
   return (
     <PortalShell>
@@ -22,9 +25,14 @@ export default function ServicesPage() {
           title="Services"
           description="What you bill for. Projects pick their services from this list, and each one goes on the invoice with its SAC code."
           action={
-            <Button size="sm" magnetic={false} onClick={() => setEditing("new")}>
-              <Plus className="h-4 w-4" /> New service
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="secondary" magnetic={false} onClick={() => router.push("/portal/services/bulk")}>
+                <FileSpreadsheet className="h-4 w-4" /> Bulk upload
+              </Button>
+              <Button size="sm" magnetic={false} onClick={() => setEditing("new")}>
+                <Plus className="h-4 w-4" /> New service
+              </Button>
+            </div>
           }
         />
 
@@ -35,7 +43,12 @@ export default function ServicesPage() {
             {data.map((s) => (
               <Row key={s.id} onClick={() => setEditing(s)}>
                 <Cell className="max-w-md whitespace-normal font-medium">{s.title}</Cell>
-                <Cell className="font-mono text-secondary">{s.sac_code ?? "-"}</Cell>
+                <Cell className="font-mono text-secondary">
+                  {s.sac_code ?? "-"}
+                  {sharedWith(services, s.sac_code, s.id).length > 0 && (
+                    <span className="block font-sans text-xs text-ink-40">Shared with another service</span>
+                  )}
+                </Cell>
                 <Cell>
                   <StatusPill status={s.is_active ? "Active" : "Inactive"} />
                 </Cell>
@@ -58,6 +71,7 @@ export default function ServicesPage() {
       {editing && (
         <ServiceForm
           service={editing === "new" ? null : editing}
+          services={services}
           onClose={() => setEditing(null)}
           onSaved={() => {
             setEditing(null);
@@ -69,7 +83,23 @@ export default function ServicesPage() {
   );
 }
 
-function ServiceForm({ service, onClose, onSaved }: { service: Service | null; onClose: () => void; onSaved: () => void }) {
+/** Titles of the other services that carry this SAC code. GST allows sharing; the form only points it out. */
+function sharedWith(services: Service[], sac: string | null, excludeId?: number): string[] {
+  if (!sac) return [];
+  return services.filter((s) => s.sac_code === sac && s.id !== excludeId).map((s) => s.title);
+}
+
+function ServiceForm({
+  service,
+  services,
+  onClose,
+  onSaved,
+}: {
+  service: Service | null;
+  services: Service[];
+  onClose: () => void;
+  onSaved: () => void;
+}) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -88,7 +118,10 @@ function ServiceForm({ service, onClose, onSaved }: { service: Service | null; o
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const body = { title: fd.get("title"), sac_code: fd.get("sac_code") || null };
+    const sac = String(fd.get("sac_code") ?? "").replace(/\s/g, "");
+    const body = { title: fd.get("title"), sac_code: sac || null };
+    const others = sharedWith(services, sac || null, service?.id);
+    if (others.length > 0 && !confirm(`SAC ${sac} is already used by ${others.join(", ")}. Save anyway?`)) return;
     run(() => (service ? api.patch(`/services/${service.id}`, body) : api.post("/services", body)));
   }
 
