@@ -7,6 +7,8 @@ import { Select } from "@/components/portal/Select";
 import { Field, inputClass } from "@/components/portal/ui";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
+import { useAuth } from "@/lib/auth";
+import { GROUP_COMPANY_ROLES } from "@/components/portal/vendors/VendorFields";
 import { formatINR } from "@/lib/utils";
 import { api, ApiError, type ProjectDetail, type Vendor } from "@/lib/api";
 import { NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
@@ -40,6 +42,10 @@ export function ProjectVendorsForm({
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const { hasRole } = useAuth();
+  // A group company's row is kept as it is unless the CFO or CEO edits it.
+  const canEditGroup = hasRole(...GROUP_COMPANY_ROLES);
+  const lockedIds = new Set(project.vendors.filter((v) => v.is_group_company && !canEditGroup).map((v) => v.vendor_id));
 
   const assigned = shares.reduce((sum, v) => sum + num(v.work_percent), 0);
   const committed = shares.reduce((sum, v) => sum + num(v.agreed_cost), 0);
@@ -116,6 +122,7 @@ export function ProjectVendorsForm({
                 <tbody>
                   {shares.map((v, i) => {
                     const name = vendorName.get(v.vendor_id) ?? project.vendors.find((p) => p.vendor_id === v.vendor_id)?.vendor_name ?? "Vendor";
+                    const locked = lockedIds.has(v.vendor_id);
                     return (
                       <tr key={v.vendor_id} className="border-b border-line/60 last:border-0">
                         <td className="px-4 py-2 font-medium">{name}</td>
@@ -127,6 +134,7 @@ export function ProjectVendorsForm({
                             step="0.01"
                             required
                             aria-label={`${name} share of the work, percent`}
+                            disabled={locked}
                             value={v.work_percent}
                             onChange={(e) => setShare(i, "work_percent", e.target.value)}
                             className={inputClass}
@@ -137,20 +145,23 @@ export function ProjectVendorsForm({
                             {...NUMBER_RULES.money}
                             required
                             aria-label={`${name} agreed cost in rupees`}
+                            disabled={locked}
                             value={v.agreed_cost}
                             onChange={(e) => setShare(i, "agreed_cost", e.target.value)}
                             className={inputClass}
                           />
                         </td>
                         <td className="px-2 py-2">
-                          <button
-                            type="button"
-                            onClick={() => setShares((all) => all.filter((_, j) => j !== i))}
-                            aria-label={`Remove ${name}`}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
+                          {!locked && (
+                            <button
+                              type="button"
+                              onClick={() => setShares((all) => all.filter((_, j) => j !== i))}
+                              aria-label={`Remove ${name}`}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

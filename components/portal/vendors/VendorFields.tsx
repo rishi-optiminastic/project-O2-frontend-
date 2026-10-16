@@ -4,10 +4,16 @@ import { useState } from "react";
 import { ChevronDown, Plus, X } from "lucide-react";
 import { Field, inputClass } from "@/components/portal/ui";
 import { GstField } from "@/components/portal/GstField";
-import type { Vendor, VendorBankAccount } from "@/lib/api";
+import { Select } from "@/components/portal/Select";
+import { useAuth } from "@/lib/auth";
+import { TDS_SECTIONS, type Vendor, type VendorBankAccount } from "@/lib/api";
 import { FIELD_RULES, NAME_MAX } from "@/lib/validation";
 
 const BANK_ACCOUNTS_FIELD = "bank_accounts";
+const GROUP_FIELD = "is_group_company";
+
+/** Only these roles see, create or mark group companies (the backend enforces the same). */
+export const GROUP_COMPANY_ROLES = ["ADMIN_CEO", "CFO"] as const;
 
 const EMPTY_ACCOUNT: VendorBankAccount = { account_holder: "", bank_name: "", account_number: "", ifsc_code: "" };
 
@@ -49,6 +55,10 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
       : [EMPTY_ACCOUNT],
   );
 
+  const { hasRole } = useAuth();
+  const [isGroup, setIsGroup] = useState(vendor?.is_group_company ?? false);
+  const [tdsSection, setTdsSection] = useState<string>(vendor?.default_tds_section ?? TDS_SECTIONS[0].key);
+
   // Open when the vendor already has any of these details, so they are never hidden by surprise.
   const hasDetails = Boolean(
     vendor && (vendor.phone || vendor.gst_number || vendor.msme_number || vendor.coi || vendor.pan || vendor.bank_accounts.length),
@@ -60,6 +70,12 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
 
   return (
     <>
+      {hasRole(...GROUP_COMPANY_ROLES) && (
+        <div className="sm:col-span-2">
+          <GroupToggle value={isGroup} onChange={setIsGroup} />
+          <input type="hidden" name={GROUP_FIELD} value={String(isGroup)} />
+        </div>
+      )}
       <Field label="Vendor name">
         <input name="business_name" maxLength={NAME_MAX} required defaultValue={vendor?.business_name} className={inputClass} />
       </Field>
@@ -91,6 +107,14 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
           </Field>
           <Field label="COI (Certificate of Incorporation)">
             <input name="coi" {...FIELD_RULES.cin} defaultValue={vendor?.coi ?? ""} className={`${inputClass} font-mono`} />
+          </Field>
+          <Field label="TDS rate on their invoices">
+            <Select
+              value={tdsSection}
+              onValueChange={setTdsSection}
+              options={TDS_SECTIONS.map((t) => ({ value: t.key, label: `${t.label} (${t.rate}%)` }))}
+            />
+            <input type="hidden" name="default_tds_section" value={tdsSection} />
           </Field>
           <Field label="PAN">
             <input
@@ -149,9 +173,42 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
   );
 }
 
+/** Group company or any other vendor. Shown to the CFO and CEO only. */
+function GroupToggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  const options = [
+    { group: false, label: "Others", hint: "Any outside vendor" },
+    { group: true, label: "Group Co", hint: "Our own sister company; only the CFO and CEO see it" },
+  ];
+  return (
+    <div role="radiogroup" aria-label="Vendor type" className="grid grid-cols-2 gap-2 rounded-2xl border border-line p-1">
+      {options.map((o) => (
+        <button
+          key={o.label}
+          type="button"
+          role="radio"
+          aria-checked={value === o.group}
+          onClick={() => onChange(o.group)}
+          className={
+            "rounded-xl px-3 py-2 text-left text-sm transition-colors " +
+            (value === o.group ? "bg-foreground text-white" : "text-secondary hover:bg-mist")
+          }
+        >
+          <span className="block font-medium">{o.label}</span>
+          <span className={"block text-xs " + (value === o.group ? "text-white/70" : "text-ink-40")}>{o.hint}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Reads a form that contains VendorFields into the API request body. */
 export function vendorPayload(form: HTMLFormElement) {
   const fd = new FormData(form);
-  const { [BANK_ACCOUNTS_FIELD]: accounts, ...fields } = Object.fromEntries(fd);
-  return { ...fields, bank_accounts: JSON.parse(String(accounts ?? "[]")) as VendorBankAccount[] };
+  const { [BANK_ACCOUNTS_FIELD]: accounts, [GROUP_FIELD]: group, ...fields } = Object.fromEntries(fd);
+  return {
+    ...fields,
+    // Sent only by the CFO and CEO, who see the toggle; others leave the flag as it is.
+    ...(group === undefined ? {} : { is_group_company: group === "true" }),
+    bank_accounts: JSON.parse(String(accounts ?? "[]")) as VendorBankAccount[],
+  };
 }

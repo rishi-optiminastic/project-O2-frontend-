@@ -56,6 +56,9 @@ export default function VendorsPage() {
               <Row key={v.id} onClick={() => router.push(`/portal/vendors/${v.id}`)}>
                 <Cell className="font-medium">
                   {v.business_name}
+                  {v.is_group_company && (
+                    <span className="ml-2 rounded-full bg-mist px-2 py-0.5 text-[11px] font-normal text-secondary">Group Co</span>
+                  )}
                   <span className="block text-xs text-ink-40">{v.email}</span>
                 </Cell>
                 <Cell className="text-ink-40">

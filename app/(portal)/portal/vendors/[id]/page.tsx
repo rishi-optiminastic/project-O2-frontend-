@@ -231,10 +231,13 @@ export default function VendorDetailPage() {
       </motion.div>
 
       <VendorInvoiceForm
+        // Remounted once the vendor loads, so its usual TDS section is the starting choice.
+        key={vendor?.default_tds_section ?? "default"}
         open={invOpen}
         onOpenChange={setInvOpen}
         vendorId={vid}
         vendorGstin={vendor?.gst_number}
+        defaultTdsSection={vendor?.default_tds_section}
         projects={projects.map(({ project }) => project)}
         onSaved={refetchInvoices}
       />
@@ -297,6 +300,7 @@ function VendorInvoiceForm({
   onOpenChange,
   vendorId,
   vendorGstin,
+  defaultTdsSection,
   projects,
   onSaved,
 }: {
@@ -304,6 +308,8 @@ function VendorInvoiceForm({
   onOpenChange: (v: boolean) => void;
   vendorId: number;
   vendorGstin: string | null | undefined;
+  /** The vendor's usual TDS section, prefilled; it can still be changed for one bill. */
+  defaultTdsSection: string | null | undefined;
   projects: Project[];
   onSaved: () => void;
 }) {
@@ -312,7 +318,7 @@ function VendorInvoiceForm({
   const [amount, setAmount] = useState(0);
   const [gstRate, setGstRate] = useState("18");
   const [interstate, setInterstate] = useState(false);
-  const [section, setSection] = useState<string>(TDS_SECTIONS[0].key);
+  const [section, setSection] = useState<string>(defaultTdsSection ?? TDS_SECTIONS[0].key);
 
   // Same arithmetic as the server, so the preview matches what gets saved.
   const tdsRate = TDS_SECTIONS.find((t) => t.key === section)?.rate ?? 0;

@@ -511,6 +511,10 @@ export interface Vendor {
   annual_service_contract?: string | null;
   approval_status: string;
   is_verified: boolean;
+  /** One of the firm's own sister companies; only the CFO and CEO ever receive these. */
+  is_group_company: boolean;
+  /** The TDS section prefilled on this vendor's invoices (a key of TDS_SECTIONS); null means the usual default. */
+  default_tds_section: string | null;
   created_at: string;
 }
 
@@ -522,6 +526,8 @@ export interface ProjectVendor {
   vendor_id: number;
   vendor_name: string;
   vendor_email: string;
+  /** A group company: its name is withheld from everyone but the CFO and CEO. */
+  is_group_company: boolean;
   work_percent: number;
   /** Before GST. */
   agreed_cost: number;
