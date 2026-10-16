@@ -12,6 +12,9 @@ import { formatDate, formatINR, cn } from "@/lib/utils";
 
 type Dialog = "manual" | "issue" | "return" | null;
 
+/** Approving a proforma sends it to the client (the coordinator's job). */
+const PI_APPROVER_ROLES = ["ADMIN_CEO", "CFO", "COORDINATOR"] as const;
+/** Issuing the tax invoice, or returning it for changes. */
 const ISSUER_ROLES = ["ADMIN_CEO", "CFO", "FINANCE_MANAGER"] as const;
 
 export function InvoiceWorkflowPanel({
@@ -30,9 +33,9 @@ export function InvoiceWorkflowPanel({
   const [shared, setShared] = useState<Pick<InvoiceWorkflowResult, "link_url" | "emailed"> | null>(null);
 
   const isCreator = invoice.created_by_id !== null && invoice.created_by_id === user?.id;
-  // A Finance Manager, CFO or CEO approves the proforma, which sends it to the client.
-  const canApprove = hasRole(...ISSUER_ROLES);
-  const canIssue = canApprove && !isCreator;
+  // A Coordinator, CFO or CEO approves the proforma, which sends it to the client.
+  const canApprove = hasRole(...PI_APPROVER_ROLES);
+  const canIssue = hasRole(...ISSUER_ROLES) && !isCreator;
   const taxDate = taxInvoiceDateISO(invoice.proforma_date);
 
   async function run(action: () => Promise<InvoiceWorkflowResult | Invoice>) {
@@ -214,7 +217,7 @@ function StageMessage({
           <p className="mt-2 text-xs text-ink-40">
             {canApprove
               ? "Edit the proforma, then approve and send it to the client again."
-              : "Edit the proforma; a Finance Manager, CFO or CEO then approves and sends it again."}
+              : "Edit the proforma; a Coordinator, CFO or CEO then approves and sends it again."}
           </p>
         </div>
       </div>
@@ -226,7 +229,7 @@ function StageMessage({
       case "Draft":
         return canApprove
           ? "Proforma draft. Nothing is owed to GST yet. Check it, then approve it to send it to the client."
-          : "Proforma draft. Nothing is owed to GST yet. A Finance Manager, CFO or CEO approves it to send it to the client.";
+          : "Proforma draft. Nothing is owed to GST yet. A Coordinator, CFO or CEO approves it to send it to the client.";
       case "Awaiting Client":
         return `Waiting for ${clientName} to approve. Editing now withdraws the link and the client must approve again.`;
       case "Client Approved": {

@@ -6,15 +6,16 @@ import type { Role } from "@/lib/api";
  * Any portal path NOT listed here is open to every authenticated role.
  * Keep this in sync with the backend guards in `app/core/rbac.py`.
  *
- *   Module        CEO  CFO  Mgr  Exec
- *   Agents         ✓    ✓    ✓    –
- *   Services       ✓    ✓    ✓    –   (everyone picks from the list on invoices)
- *   Projects       ✓    ✓    ✓    –   (edit and send work orders; every role views)
- *   Banks          ✓    ✓    ✓    –   (everyone picks from the list on receipts)
- *   Taxation       ✓    ✓    ✓    –
- *   Approvals      ✓    ✓    ✓    –
- *   Audit Trail    ✓    –    –    –
- *   (everything else: all four)
+ *   Module        CEO  CFO  Mgr  Exec  Coord
+ *   Agents         ✓    ✓    ✓    –     –
+ *   Services       ✓    ✓    ✓    –     –   (everyone picks from the list on invoices)
+ *   Projects       ✓    ✓    ✓    –     –   (edit and send work orders; every role views)
+ *   Banks          ✓    ✓    ✓    –     –   (everyone picks from the list on receipts)
+ *   Taxation       ✓    ✓    ✓    –     –
+ *   Approvals      ✓    ✓    ✓    –     –
+ *   Audit Trail    ✓    –    –    –     –
+ *   PI approval    ✓    ✓    –    –     ✓   (approve a proforma, which sends it to the client)
+ *   (everything else: every role; the Coordinator only reads)
  */
 const NON_EXEC: Role[] = ["ADMIN_CEO", "CFO", "FINANCE_MANAGER"];
 

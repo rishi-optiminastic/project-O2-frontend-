@@ -133,7 +133,7 @@ export const api = {
 
 /* ----------------------------- Types ----------------------------- */
 
-export type Role = "ADMIN_CEO" | "CFO" | "FINANCE_MANAGER" | "FINANCE_EXECUTIVE";
+export type Role = "ADMIN_CEO" | "CFO" | "FINANCE_MANAGER" | "FINANCE_EXECUTIVE" | "COORDINATOR";
 
 export interface CurrentUser {
   id: number;

@@ -31,7 +31,7 @@ import {
 import { formatDate, timeAgo } from "@/lib/utils";
 
 // Roles the CEO may assign when inviting (the CEO seat is not re-issuable).
-const INVITE_ROLES: Role[] = ["CFO", "FINANCE_MANAGER", "FINANCE_EXECUTIVE"];
+const INVITE_ROLES: Role[] = ["CFO", "FINANCE_MANAGER", "FINANCE_EXECUTIVE", "COORDINATOR"];
 
 export default function TeamPage() {
   const { data: members, loading: membersLoading } = useApi<TeamMember[]>("/team/members");

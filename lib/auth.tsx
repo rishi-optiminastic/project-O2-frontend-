@@ -113,4 +113,5 @@ export const ROLE_LABELS: Record<Role, string> = {
   CFO: "CFO",
   FINANCE_MANAGER: "Finance Manager",
   FINANCE_EXECUTIVE: "Finance Executive",
+  COORDINATOR: "Coordinator",
 };
