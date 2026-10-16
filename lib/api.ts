@@ -392,6 +392,9 @@ export interface Invoice {
   amount_pending: number;
   status: string;
   gst_status: string;
+  /** "Not applicable" on a proforma; "Pending" on a tax invoice until its IRN is recorded; then "Generated". */
+  e_invoice_status: "Not applicable" | "Pending" | "Generated";
+  irn?: string | null;
   is_locked: boolean;
   locked_at?: string | null;
   supporting_document?: string | null;

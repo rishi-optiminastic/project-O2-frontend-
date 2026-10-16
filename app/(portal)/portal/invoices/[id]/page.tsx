@@ -372,6 +372,10 @@ export default function InvoiceDetailPage() {
                   <DataField label="Tax invoice date" value={invoice.invoice_date ? formatDate(invoice.invoice_date) : "Set when issued"} />
                   <DataField label="Due date" value={invoice.due_date ? formatDate(invoice.due_date) : null} />
                   <DataField label="GST status" value={invoice.is_issued ? invoice.gst_status : "Not yet due (proforma)"} />
+                  <DataField
+                    label="E-invoice"
+                    value={invoice.is_issued ? (invoice.irn ? `Generated · IRN ${invoice.irn}` : "Pending (IRN not generated yet)") : "Not applicable (proforma)"}
+                  />
                   <DataField label="TDS deducted by client" value={`${invoice.tds_rate}%`} />
                   <DataField label="Tax" value={invoice.is_interstate ? "IGST (inter-state)" : "CGST + SGST (intra-state)"} />
                   {invoice.supporting_document && <DataField label="Supporting document" value={invoice.supporting_document} />}

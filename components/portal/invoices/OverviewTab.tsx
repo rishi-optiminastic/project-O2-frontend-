@@ -128,7 +128,7 @@ export function OverviewTab() {
       {loading ? (
         <Empty message="Loading invoices…" />
       ) : data && data.length > 0 ? (
-        <Table head={["Invoice", "Client", "Total", "Pending", "Status", "GST", ""]}>
+        <Table head={["Invoice", "Client", "Total", "Pending", "Status", "GST", "E-invoice", ""]}>
           {data.map((i) => (
             <Row key={i.id} onClick={() => router.push(`/portal/invoices/${i.id}`)}>
               <Cell className="font-medium">
@@ -148,6 +148,7 @@ export function OverviewTab() {
                 <StatusPill status={i.status} />
               </Cell>
               <Cell className="text-secondary">{i.is_issued ? i.gst_status : "Not due (proforma)"}</Cell>
+              <Cell>{i.is_issued ? <StatusPill status={`E-invoice ${i.e_invoice_status.toLowerCase()}`} /> : <span className="text-ink-40">-</span>}</Cell>
               <Cell>
                 <button
                   onClick={(e) => {
