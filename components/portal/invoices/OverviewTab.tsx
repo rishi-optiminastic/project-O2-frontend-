@@ -9,18 +9,26 @@ import { Select } from "@/components/portal/Select";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
-import { api, ApiError, PROFORMA_STAGES, type Invoice, type Client, type AgentOption, type Service } from "@/lib/api";
-import { ServiceSelect } from "@/components/portal/ServiceSelect";
-import { AgentSelect } from "@/components/portal/AgentSelect";
+import { api, ApiError, PROFORMA_STAGES, type Invoice, type Client, type Project } from "@/lib/api";
+import { ProjectPicker, ProjectSummary, overContractWarning } from "@/components/portal/invoices/ProjectPicker";
+import {
+  InterstateField,
+  LinesEditor,
+  LinesPreview,
+  draftsFor,
+  interstateFromGstin,
+  lineInputs,
+  type LineDrafts,
+} from "@/components/portal/invoices/InvoiceLines";
 import { formatINR } from "@/lib/utils";
-import { monthEndISO } from "@/lib/invoice";
-import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES, futureDateRule } from "@/lib/validation";
+import { monthEndISO, monthStartISO } from "@/lib/invoice";
+import { NUMBER_RULES, futureDateRule, indiaToday } from "@/lib/validation";
 import { useMonth, withMonth } from "@/lib/month";
 
-/** Filter options, in lifecycle order: proforma stages first, then the issued tax invoice. */
-/** Clients deduct TDS on professional fees at 10% (section 194J); editable per invoice. */
-const DEFAULT_TDS_RATE = 10;
+/** Clients usually deduct 2% TDS (sections 194C / 194J technical); editable per invoice. */
+const DEFAULT_TDS_RATE = 2;
 
+/** Filter options, in lifecycle order: proforma stages first, then the issued tax invoice. */
 const STATUSES = [
   ...PROFORMA_STAGES,
   "Sent", "Pending", "Partially Paid", "Fully Paid", "Overdue", "Cancelled", "Disputed", "Reconciled",
@@ -29,7 +37,6 @@ const STATUSES = [
 /** The "Overview" tab — the full client-invoice list with search, filters and creation. */
 export function OverviewTab() {
   const { data: clients } = useApi<Client[]>("/clients");
-  const { data: agents } = useApi<AgentOption[]>("/agents/options");
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -165,7 +172,6 @@ export function OverviewTab() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         clients={clients ?? []}
-        agents={agents}
         onCreated={(inv) => router.push(`/portal/invoices/${inv.id}`)}
       />
     </div>
@@ -218,68 +224,50 @@ function CreateInvoice({
   open,
   onOpenChange,
   clients,
-  agents,
   onCreated,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   clients: Client[];
-  agents: AgentOption[] | null;
   onCreated: (invoice: Invoice) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [taxable, setTaxable] = useState(100000);
-  const [rate, setRate] = useState(18);
-  const { data: services } = useApi<Service[]>("/services");
-  const [service, setService] = useState<Service>();
-
-  // A service fills in its description, SAC code and GST rate; all stay editable.
-  function chooseService(next: Service) {
-    setService(next);
-    setRate(next.gst_rate);
-  }
+  const { data: projects, refetch: refetchProjects } = useApi<Project[]>(open ? "/projects" : null);
+  const [project, setProject] = useState<Project>();
+  const [drafts, setDrafts] = useState<LineDrafts>({});
   const [interstate, setInterstate] = useState(false);
-  // Only explicit picks live in state; defaults follow the (async) client list.
-  const [pickedClientId, setPickedClientId] = useState<number>();
-  const [pickedAgentId, setPickedAgentId] = useState<number>();
-  const clientId = pickedClientId ?? clients[0]?.id;
-  // The client's own agent is credited unless someone else is chosen.
-  const agentId = pickedAgentId ?? clients.find((c) => c.id === clientId)?.agent_id;
-  const chosenAgent = agents?.find((a) => a.id === agentId);
+  const clientGstin = clients.find((c) => c.id === project?.client_id)?.gst_number;
+  const isInterstate = interstateFromGstin(clientGstin) ?? interstate;
+  const lines = lineInputs(project, drafts);
+  const warning = overContractWarning(project, lines.reduce((sum, l) => sum + l.taxable_value, 0));
 
-  function chooseClient(id: number) {
-    setPickedClientId(id);
-    setPickedAgentId(undefined);
+  function chooseProject(next: Project) {
+    setProject(next);
+    setDrafts(draftsFor(next));
   }
-
-  const gst = +(taxable * rate / 100).toFixed(2);
-  const total = +(taxable + gst).toFixed(2);
-  const half = +(gst / 2).toFixed(2);
-
-  // Reference: a referral agent's existing invoices (not shown for the in-house agent).
-  const showAgentInvoices = chosenAgent !== undefined && !chosenAgent.is_house;
-  const { data: agentInvoices } = useApi<Invoice[]>(showAgentInvoices ? `/invoices?agent_id=${agentId}` : null);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!project) {
+      setError("Choose the project this invoice is for.");
+      return;
+    }
+    if (lines.length === 0) {
+      setError("Enter the amount for at least one service.");
+      return;
+    }
     setSaving(true);
     setError(null);
     const fd = new FormData(e.currentTarget);
     try {
       const created = await api.post<Invoice>("/invoices", {
-        client_id: Number(fd.get("client_id")),
-        agent_id: Number(fd.get("agent_id")),
-        service_id: Number(fd.get("service_id")),
+        project_id: project.id,
+        proforma_date: fd.get("proforma_date") || null,
         due_date: fd.get("due_date") || null,
-        service_description: fd.get("service_description"),
-        sac_code: fd.get("sac_code") || null,
-        taxable_value: Number(fd.get("taxable_value")),
-        gst_rate: Number(fd.get("gst_rate")),
-        is_interstate: interstate,
+        lines,
+        is_interstate: isInterstate,
         tds_rate: Number(fd.get("tds_rate") || 0),
-        supporting_document: fd.get("supporting_document") || null,
-        internal_remarks: fd.get("internal_remarks") || null,
       });
       onOpenChange(false);
       onCreated(created);
@@ -294,126 +282,61 @@ function CreateInvoice({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
+      size="wide"
       title="New proforma invoice"
-      description="Starts as an editable proforma. The tax invoice number and date are assigned when a manager issues it."
+      description="Raised against a project, which sets the client and the services billed. A manager approves it to send it to the client."
     >
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Client">
-          <Select
-            name="client_id"
-            required
-            placeholder="Select client"
-            value={clientId !== undefined ? String(clientId) : undefined}
-            onValueChange={(v) => chooseClient(Number(v))}
-            options={clients.map((c) => ({ value: String(c.id), label: c.business_name }))}
-          />
-        </Field>
-        <Field label="Agent credited">
-          <AgentSelect options={agents} value={agentId} onValueChange={setPickedAgentId} />
-        </Field>
-
-        {/* Reference: the chosen agent's existing invoices */}
-        {showAgentInvoices && (
-          <div className="sm:col-span-2 rounded-2xl border border-line bg-mist/40 p-4">
-            <p className="mb-2 text-xs tracking-eyebrow text-secondary">
-              This agent&apos;s invoices ({agentInvoices?.length ?? 0})
-            </p>
-            {agentInvoices && agentInvoices.length > 0 ? (
-              <div className="flex max-h-40 flex-col gap-1.5 overflow-y-auto">
-                {agentInvoices.map((inv) => (
-                  <div key={inv.id} className="flex items-center justify-between rounded-lg bg-white/60 px-3 py-2 text-xs">
-                    <span className="font-medium">{inv.display_number}</span>
-                    <span className="tabular-nums text-ink-40">{formatINR(inv.total_amount)}</span>
-                    <span className="text-ink-40">{inv.status}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-ink-40">No invoices for this agent yet.</p>
-            )}
-          </div>
-        )}
-        <div className="sm:col-span-2">
-          <Field label="Service">
-            <ServiceSelect services={services} value={service?.id} onChange={chooseService} />
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="Description (printed on the invoice)">
-            {/* key: remount so a newly chosen service's description fills in */}
-            <textarea
-              key={`desc-${service?.id}`}
-              name="service_description"
-              rows={2}
-              defaultValue={service?.description ?? ""}
-              className={inputClass + " h-auto py-2.5"}
-            />
-          </Field>
-        </div>
-        <Field label="SAC code (GST service code)">
-          <input key={`sac-${service?.id}`} name="sac_code" {...FIELD_RULES.sac} defaultValue={service?.sac_code ?? ""} className={inputClass} />
+        <Field label="Invoice date (this month)">
+          <input name="proforma_date" type="date" required min={monthStartISO()} max={indiaToday()} defaultValue={indiaToday()} className={inputClass} />
         </Field>
         <Field label="Due date (default: end of month)">
           <input name="due_date" {...futureDateRule()} defaultValue={monthEndISO()} className={inputClass} />
         </Field>
-        <Field label="Taxable value (₹)">
-          <input
-            name="taxable_value"
-            {...NUMBER_RULES.positiveMoney}
-            required
-            value={taxable}
-            onChange={(e) => setTaxable(Number(e.target.value))}
-            className={inputClass}
-          />
-        </Field>
-        <Field label="GST rate (%)">
-          <Select name="gst_rate" value={String(rate)} onValueChange={(v) => setRate(Number(v))} options={GST_RATE_OPTIONS} />
-        </Field>
-        <Field label="TDS the client deducts (%) · 10% for professional fees">
+        <div className="sm:col-span-2">
+          <Field label="Project">
+            <ProjectPicker
+              projects={projects}
+              value={project?.id}
+              onChange={chooseProject}
+              onCreated={() => refetchProjects()}
+            />
+          </Field>
+        </div>
+        {project && (
+          <>
+            <div className="sm:col-span-2">
+              <ProjectSummary project={project} />
+            </div>
+            <div className="sm:col-span-2">
+              <LinesEditor project={project} drafts={drafts} onChange={setDrafts} />
+            </div>
+          </>
+        )}
+
+        <Field label="TDS the client deducts (%)">
           <input name="tds_rate" {...NUMBER_RULES.tdsRate} defaultValue={DEFAULT_TDS_RATE} className={inputClass} />
         </Field>
-        <div className="flex items-end gap-4">
-          <label className="flex items-center gap-2 text-sm font-light text-secondary">
-            <input type="checkbox" checked={interstate} onChange={(e) => setInterstate(e.target.checked)} className="accent-foreground" /> Inter-state (IGST)
-          </label>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="Supporting document (reference / link)">
-            <input name="supporting_document" className={inputClass} />
-          </Field>
-        </div>
-        <div className="sm:col-span-2">
-          <Field label="Internal remarks">
-            <input name="internal_remarks" className={inputClass} />
-          </Field>
-        </div>
+        {project && (
+          <div className="flex items-end pb-3">
+            <InterstateField clientGstin={clientGstin} checked={interstate} onChange={setInterstate} />
+          </div>
+        )}
+        {warning && <p role="status" className="sm:col-span-2 text-sm text-warning">⚠ {warning}</p>}
 
-        {/* Live GST preview with CGST/SGST/IGST split */}
-        <div className="sm:col-span-2 grid grid-cols-2 gap-3 rounded-2xl border border-line bg-mist/50 p-4 text-center text-sm sm:grid-cols-4">
-          <div>
-            <p className="text-xs text-ink-40">Taxable</p>
-            <p className="mt-1 font-medium tabular-nums">{formatINR(taxable)}</p>
+        {/* Live GST preview with CGST/SGST/IGST split, per line at its service's rate */}
+        {project && (
+          <div className="sm:col-span-2">
+            <LinesPreview project={project} drafts={drafts} interstate={isInterstate} />
           </div>
-          <div>
-            <p className="text-xs text-ink-40">{interstate ? "IGST" : "CGST + SGST"}</p>
-            <p className="mt-1 font-medium tabular-nums">{interstate ? formatINR(gst) : `${formatINR(half)} × 2`}</p>
-          </div>
-          <div>
-            <p className="text-xs text-ink-40">GST total</p>
-            <p className="mt-1 font-medium tabular-nums">{formatINR(gst)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-ink-40">Invoice total</p>
-            <p className="mt-1 font-medium tabular-nums">{formatINR(total)}</p>
-          </div>
-        </div>
+        )}
 
         {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="submit" magnetic={false} disabled={saving}>
+          <Button type="submit" magnetic={false} disabled={saving || !project}>
             {saving ? "Saving…" : "Create proforma"}
           </Button>
         </ModalFooter>

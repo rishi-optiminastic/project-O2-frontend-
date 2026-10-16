@@ -5,12 +5,17 @@ import { X } from "lucide-react";
 import type { ReactNode } from "react";
 import { motion } from "framer-motion";
 
+/**
+ * A dialog. A single click outside does nothing, so a stray click never throws away
+ * a half-filled form; double-click outside, press Esc or use the close button to close it.
+ */
 export function Modal({
   open,
   onOpenChange,
   title,
   description,
   size = "md",
+  stacked = false,
   children,
 }: {
   open: boolean;
@@ -19,17 +24,26 @@ export function Modal({
   description?: string;
   /** "wide" fits forms laid out four fields across. */
   size?: "md" | "wide";
+  /** Opened on top of another dialog: a heavier overlay hides the one beneath. */
+  stacked?: boolean;
   children: ReactNode;
 }) {
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-[120] bg-foreground/25 backdrop-blur-sm" />
+        <Dialog.Overlay
+          onDoubleClick={() => onOpenChange(false)}
+          className={
+            "fixed inset-0 " + (stacked ? "z-[130] bg-foreground/40 backdrop-blur-xl" : "z-[120] bg-foreground/25 backdrop-blur-sm")
+          }
+        />
         <Dialog.Content
           className={
-            "fixed left-1/2 top-1/2 z-[121] -translate-x-1/2 -translate-y-1/2 focus:outline-none " +
+            "fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 focus:outline-none " +
+            (stacked ? "z-[131] " : "z-[121] ") +
             (size === "wide" ? "w-[min(94vw,1080px)]" : "w-[min(92vw,640px)]")
           }
+          onInteractOutside={(e) => e.preventDefault()}
           asChild
         >
           <motion.div

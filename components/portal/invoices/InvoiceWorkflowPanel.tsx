@@ -7,7 +7,7 @@ import { Modal } from "@/components/portal/Modal";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, type Invoice, type InvoiceWorkflowResult } from "@/lib/api";
-import { WORKFLOW_STEPS, workflowStep } from "@/lib/invoice";
+import { WORKFLOW_STEPS, paymentDueISO, taxInvoiceDateISO, workflowStep } from "@/lib/invoice";
 import { formatDate, formatINR, cn } from "@/lib/utils";
 
 type Dialog = "manual" | "issue" | "return" | null;
@@ -30,7 +30,10 @@ export function InvoiceWorkflowPanel({
   const [shared, setShared] = useState<Pick<InvoiceWorkflowResult, "link_url" | "emailed"> | null>(null);
 
   const isCreator = invoice.created_by_id !== null && invoice.created_by_id === user?.id;
-  const canIssue = hasRole(...ISSUER_ROLES) && !isCreator;
+  // A Finance Manager, CFO or CEO approves the proforma, which sends it to the client.
+  const canApprove = hasRole(...ISSUER_ROLES);
+  const canIssue = canApprove && !isCreator;
+  const taxDate = taxInvoiceDateISO(invoice.proforma_date);
 
   async function run(action: () => Promise<InvoiceWorkflowResult | Invoice>) {
     setBusy(true);
@@ -60,24 +63,24 @@ export function InvoiceWorkflowPanel({
     <Panel className="flex flex-col gap-6">
       <StageTracker invoice={invoice} />
 
-      <StageMessage invoice={invoice} clientName={clientName} isCreator={isCreator} canIssue={canIssue} />
+      <StageMessage invoice={invoice} clientName={clientName} isCreator={isCreator} canApprove={canApprove} canIssue={canIssue} />
 
       {shared?.link_url && <SharedLink url={shared.link_url} emailed={shared.emailed} />}
 
       {error && !dialog && <p role="alert" className="text-sm text-danger">⚠ {error}</p>}
 
       <div className="flex flex-wrap gap-3">
-        {(invoice.status === "Draft" || invoice.status === "Changes Requested") && (
+        {canApprove && (invoice.status === "Draft" || invoice.status === "Changes Requested") && (
           <Button size="sm" magnetic={false} onClick={send} disabled={busy}>
-            <Send className="h-4 w-4" /> Send to client for approval
+            <Send className="h-4 w-4" /> Approve and send to client
           </Button>
         )}
-        {invoice.status === "Awaiting Client" && (
+        {canApprove && invoice.status === "Awaiting Client" && (
           <Button size="sm" variant="secondary" magnetic={false} onClick={send} disabled={busy}>
-            <Send className="h-4 w-4" /> Resend approval link
+            <Send className="h-4 w-4" /> Resend to client
           </Button>
         )}
-        {["Draft", "Changes Requested", "Awaiting Client"].includes(invoice.status) && (
+        {canApprove && ["Draft", "Changes Requested", "Awaiting Client"].includes(invoice.status) && (
           <Button size="sm" variant="secondary" magnetic={false} onClick={() => setDialog("manual")} disabled={busy}>
             <UserCheck className="h-4 w-4" /> Client approved offline
           </Button>
@@ -85,7 +88,7 @@ export function InvoiceWorkflowPanel({
         {invoice.status === "Client Approved" && canIssue && (
           <>
             <Button size="sm" magnetic={false} onClick={() => setDialog("issue")} disabled={busy}>
-              <ShieldCheck className="h-4 w-4" /> Approve and send tax invoice
+              <ShieldCheck className="h-4 w-4" /> Send tax invoice
             </Button>
             <Button size="sm" variant="secondary" magnetic={false} onClick={() => setDialog("return")} disabled={busy}>
               <Undo2 className="h-4 w-4" /> Return for changes
@@ -121,12 +124,13 @@ export function InvoiceWorkflowPanel({
       <Modal
         open={dialog === "issue"}
         onOpenChange={(open) => setDialog(open ? "issue" : null)}
-        title="Issue tax invoice"
+        title="Send tax invoice"
         description="This is the legal GST document. It cannot be edited afterwards."
       >
         <div className="flex flex-col gap-4 text-sm">
           <ul className="flex flex-col gap-2 text-secondary">
-            <li>· The next tax invoice number is assigned and today becomes the invoice date.</li>
+            <li>· The next tax invoice number is assigned, dated {formatDate(taxDate)}.</li>
+            <li>· Full payment is due by {formatDate(paymentDueISO(taxDate))} (15th of the next month).</li>
             <li>· GST of {formatINR(invoice.gst_amount)} becomes payable for this month&apos;s return.</li>
             <li>· The invoice is locked. Corrections need a credit note.</li>
             <li>· {clientName} receives a link to view and download it.</li>
@@ -191,11 +195,13 @@ function StageMessage({
   invoice,
   clientName,
   isCreator,
+  canApprove,
   canIssue,
 }: {
   invoice: Invoice;
   clientName: string;
   isCreator: boolean;
+  canApprove: boolean;
   canIssue: boolean;
 }) {
   if (invoice.status === "Changes Requested" && invoice.change_request_note) {
@@ -205,7 +211,11 @@ function StageMessage({
         <div>
           <p className="font-medium">Changes requested by {invoice.change_requested_by ?? "the client"}</p>
           <p className="mt-1 whitespace-pre-line text-secondary">{invoice.change_request_note}</p>
-          <p className="mt-2 text-xs text-ink-40">Edit the proforma, then send it to the client again.</p>
+          <p className="mt-2 text-xs text-ink-40">
+            {canApprove
+              ? "Edit the proforma, then approve and send it to the client again."
+              : "Edit the proforma; a Finance Manager, CFO or CEO then approves and sends it again."}
+          </p>
         </div>
       </div>
     );
@@ -214,7 +224,9 @@ function StageMessage({
   const text = (() => {
     switch (invoice.status) {
       case "Draft":
-        return "Proforma draft. Nothing is owed to GST yet. Edit freely, then send it to the client.";
+        return canApprove
+          ? "Proforma draft. Nothing is owed to GST yet. Check it, then approve it to send it to the client."
+          : "Proforma draft. Nothing is owed to GST yet. A Finance Manager, CFO or CEO approves it to send it to the client.";
       case "Awaiting Client":
         return `Waiting for ${clientName} to approve. Editing now withdraws the link and the client must approve again.`;
       case "Client Approved": {
@@ -224,7 +236,7 @@ function StageMessage({
             : `approved by ${invoice.client_approver_name} through the secure link`;
         const date = invoice.client_approved_at ? ` on ${formatDate(invoice.client_approved_at)}` : "";
         const next = canIssue
-          ? "Review it, then issue the tax invoice or return it."
+          ? "Review it, then send the tax invoice or return it."
           : isCreator
             ? "You created this invoice, so a different manager must approve it."
             : "Waiting for a Finance Manager, CFO or CEO to approve it.";

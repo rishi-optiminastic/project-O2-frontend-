@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Field, inputClass } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Select } from "@/components/portal/Select";
@@ -8,7 +9,8 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { formatINR } from "@/lib/utils";
 import { emitPortalEvent, PORTAL_EVENTS } from "@/lib/events";
-import { api, ApiError, type Client, type Invoice } from "@/lib/api";
+import { api, ApiError, type Client, type CompanyBank, type Invoice } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { FIELD_RULES, NUMBER_RULES, indiaToday, pastDateRule } from "@/lib/validation";
 
 /** Rounding slack, matching the backend's settlement tolerance. */
@@ -45,7 +47,7 @@ export function RecordReceiptModal({
       open={open}
       onOpenChange={onOpenChange}
       title="Record a receipt"
-      description="Money received from a client. Cash plus the TDS the client deducted settles the invoice, and recording it locks the invoice's amounts."
+      description="Money received from a client. The client's TDS is counted automatically, and recording a receipt locks the invoice's amounts."
     >
       <ReceiptBody invoiceId={invoiceId} onDone={() => onOpenChange(false)} />
     </Modal>
@@ -131,11 +133,20 @@ function ReceiptForm({ invoice, onDone }: { invoice: Invoice; onDone: () => void
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const tdsExpected = tdsStillExpected(invoice);
+  const { data: banks } = useApi<CompanyBank[]>("/banks");
+  const { hasRole } = useAuth();
+  // Most firms have one account; it is chosen straight away.
+  const [bankId, setBankId] = useState<string>();
+  const chosenBank = bankId ?? (banks?.length === 1 ? String(banks[0].id) : undefined);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
     const amount = Number(fd.get("amount"));
+    if (!chosenBank) {
+      setError("Choose the bank the money was received into.");
+      return;
+    }
     if (amount > invoice.amount_pending + TOLERANCE) {
       setError(`Receipt of ${formatINR(amount)} exceeds the pending amount of ${formatINR(invoice.amount_pending)}.`);
       return;
@@ -146,12 +157,10 @@ function ReceiptForm({ invoice, onDone }: { invoice: Invoice; onDone: () => void
       await api.post(`/invoices/${invoice.id}/payments`, {
         amount,
         payment_date: fd.get("payment_date"),
+        bank_account_id: Number(chosenBank),
         bank_reference: fd.get("bank_reference"),
-        bank_name: fd.get("bank_name"),
-        tds_deducted: Number(fd.get("tds_deducted") || 0),
+        // TDS is left to the server: counted as deducted once the cash clears the rest.
         gst_component: Number(fd.get("gst_component") || 0),
-        remarks: fd.get("remarks"),
-        attachment: fd.get("attachment") || null,
       });
       emitPortalEvent(PORTAL_EVENTS.receiptRecorded);
       onDone();
@@ -164,16 +173,6 @@ function ReceiptForm({ invoice, onDone }: { invoice: Invoice; onDone: () => void
 
   return (
     <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <Field label={`Cash received (₹) · ${formatINR(invoice.amount_pending)} still due`}>
-        <input
-          name="amount"
-          {...NUMBER_RULES.positiveMoney}
-          max={invoice.amount_pending}
-          required
-          defaultValue={Math.max(invoice.amount_pending - tdsExpected, 0)}
-          className={inputClass}
-        />
-      </Field>
       <Field label="Date">
         <input
           name="payment_date"
@@ -185,24 +184,48 @@ function ReceiptForm({ invoice, onDone }: { invoice: Invoice; onDone: () => void
           className={inputClass}
         />
       </Field>
-      <Field label="Bank reference / UTR">
-        <input name="bank_reference" {...FIELD_RULES.bankReference} placeholder="UTR or cheque number" className={inputClass} />
+      <Field label="Amount received (₹)">
+        <input
+          name="amount"
+          {...NUMBER_RULES.positiveMoney}
+          max={invoice.amount_pending}
+          required
+          defaultValue={Math.max(invoice.amount_pending - tdsExpected, 0)}
+          className={inputClass}
+        />
       </Field>
       <Field label="Bank name (received into)">
-        <input name="bank_name" required maxLength={160} placeholder="HDFC Bank" className={inputClass} />
+        {banks && banks.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-line px-3.5 py-3 text-sm text-secondary">
+            No bank added yet.{" "}
+            {hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER") ? (
+              <Link href="/portal/banks" className="underline underline-offset-2">
+                Add one on the Banks page.
+              </Link>
+            ) : (
+              "Ask a Finance Manager to add it on the Banks page."
+            )}
+          </p>
+        ) : (
+          <Select
+            options={(banks ?? []).map((b) => ({ value: String(b.id), label: b.label }))}
+            value={chosenBank}
+            onValueChange={setBankId}
+            placeholder={banks ? "Which account?" : "Loading banks…"}
+          />
+        )}
       </Field>
-      <Field label={`TDS deducted by client (₹) · ${formatINR(tdsExpected)} expected`}>
-        <input name="tds_deducted" {...NUMBER_RULES.money} max={tdsExpected} defaultValue={tdsExpected} className={inputClass} />
+      <Field label="Bank UTR">
+        <input name="bank_reference" {...FIELD_RULES.bankReference} placeholder="UTR or cheque number" className={inputClass} />
       </Field>
       <Field label="GST component (₹)">
         <input name="gst_component" {...NUMBER_RULES.money} defaultValue={0} className={inputClass} />
       </Field>
-      <Field label="Remarks">
-        <input name="remarks" className={inputClass} />
-      </Field>
-      <Field label="Attachment (reference / link)">
-        <input name="attachment" className={inputClass} />
-      </Field>
+      <p className="col-span-full text-xs text-ink-40">
+        {formatINR(invoice.amount_pending)} still due.
+        {tdsExpected > 0 &&
+          ` TDS of ${formatINR(tdsExpected)} (${invoice.tds_rate}%) counts as deducted by the client once the amount received clears the rest.`}
+      </p>
       {error && <p role="alert" className="col-span-full text-sm text-danger">⚠ {error}</p>}
       <ModalFooter>
         <Button type="button" variant="secondary" magnetic={false} onClick={onDone}>

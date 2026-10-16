@@ -10,12 +10,20 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
-import { api, ApiError, type Invoice, type Client, type AgentOption, type Service } from "@/lib/api";
-import { ServiceSelect } from "@/components/portal/ServiceSelect";
-import { AgentSelect, agentLabel } from "@/components/portal/AgentSelect";
-import { documentKind } from "@/lib/invoice";
-import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES } from "@/lib/validation";
-import { Select } from "@/components/portal/Select";
+import { api, ApiError, type Invoice, type Client, type AgentOption, type Project } from "@/lib/api";
+import { ProjectPicker, ProjectSummary, overContractWarning } from "@/components/portal/invoices/ProjectPicker";
+import {
+  InterstateField,
+  LinesEditor,
+  LinesTable,
+  draftsFor,
+  interstateFromGstin,
+  lineInputs,
+  type LineDrafts,
+} from "@/components/portal/invoices/InvoiceLines";
+import { agentLabel } from "@/components/portal/AgentSelect";
+import { documentKind, monthStartISO } from "@/lib/invoice";
+import { NUMBER_RULES, indiaToday } from "@/lib/validation";
 import { InvoiceWorkflowPanel } from "@/components/portal/invoices/InvoiceWorkflowPanel";
 import { InvoiceTimeline } from "@/components/portal/invoices/InvoiceTimeline";
 import { RecordReceiptModal, canRecordReceipt } from "@/components/portal/invoices/RecordReceipt";
@@ -34,9 +42,12 @@ export default function InvoiceDetailPage() {
   const { data: invoice, loading, refetch } = useApi<Invoice>(id ? `/invoices/${id}` : null);
   const { data: clients } = useApi<Client[]>("/clients");
   const { data: agents } = useApi<AgentOption[]>("/agents/options");
-  const { data: services } = useApi<Service[]>("/services");
-  // Choosing another service in the edit form re-fills its description, SAC and GST rate.
-  const [editService, setEditService] = useState<Service>();
+  const { data: projects, refetch: refetchProjects } = useApi<Project[]>("/projects");
+  // Moving a proforma to another project re-fills its client and services.
+  const [editProject, setEditProject] = useState<Project>();
+  const [drafts, setDrafts] = useState<LineDrafts>({});
+  const [legacyTaxable, setLegacyTaxable] = useState<number>();
+  const [interstate, setInterstate] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -64,6 +75,29 @@ export default function InvoiceDetailPage() {
   const client = clients?.find((c) => c.id === invoice.client_id);
   const clientName = client?.business_name ?? `Client #${invoice.client_id}`;
   const agent = agents?.find((a) => a.id === invoice.agent_id);
+  const project = projects?.find((p) => p.id === invoice.project_id);
+  const formProject = editProject ?? project;
+  const editLines = lineInputs(formProject, drafts);
+  const editTaxable = formProject ? editLines.reduce((sum, l) => sum + l.taxable_value, 0) : (legacyTaxable ?? invoice.taxable_value);
+  // This invoice already counts in its own project's billed total.
+  const ownShare = formProject && formProject.id === invoice.project_id && invoice.status !== "Cancelled" ? invoice.taxable_value : 0;
+  const editWarning = editing ? overContractWarning(formProject, editTaxable, ownShare) : null;
+  const clientGstin = clients?.find((c) => c.id === (formProject?.client_id ?? invoice.client_id))?.gst_number;
+
+  function toggleEditing() {
+    if (!editing) {
+      setEditProject(undefined);
+      setDrafts(draftsFor(project, invoice!.lines));
+      setLegacyTaxable(undefined);
+      setInterstate(invoice!.is_interstate);
+    }
+    setEditing((v) => !v);
+  }
+
+  function chooseProject(next: Project) {
+    setEditProject(next);
+    setDrafts(draftsFor(next));
+  }
 
   const canReceive = canRecordReceipt(invoice);
   const canEdit = invoice.is_issued
@@ -76,22 +110,28 @@ export default function InvoiceDetailPage() {
     setSaving(true);
     setError(null);
     const fd = new FormData(e.currentTarget);
+    if (formProject && editLines.length === 0) {
+      setError("Enter the amount for at least one service.");
+      setSaving(false);
+      return;
+    }
+    const proformaDate = fd.get("proforma_date");
     try {
       await api.patch(`/invoices/${invoice!.id}`, {
         due_date: fd.get("due_date") || null,
-        service_description: fd.get("service_description"),
-        sac_code: fd.get("sac_code") || null,
-        // The agent and service are fixed once the tax invoice is issued.
-        ...(invoice!.is_issued ? {} : { agent_id: Number(fd.get("agent_id")) }),
-        ...(!invoice!.is_issued && editService ? { service_id: editService.id } : {}),
-        taxable_value: Number(fd.get("taxable_value")),
-        gst_rate: Number(fd.get("gst_rate")),
+        // The project, date and tax split are fixed once the tax invoice is issued.
+        ...(!invoice!.is_issued && editProject ? { project_id: editProject.id } : {}),
+        ...(!invoice!.is_issued && proformaDate && proformaDate !== invoice!.proforma_date ? { proforma_date: proformaDate } : {}),
+        ...(!invoice!.is_issued ? { is_interstate: interstateFromGstin(clientGstin) ?? interstate } : {}),
+        ...(formProject
+          ? { lines: editLines }
+          : { taxable_value: Number(fd.get("taxable_value")), service_description: fd.get("service_description") }),
         tds_rate: Number(fd.get("tds_rate") || 0),
-        internal_remarks: fd.get("internal_remarks"),
       });
       setEditing(false);
-      setEditService(undefined);
+      setEditProject(undefined);
       refetch();
+      refetchProjects();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update invoice");
     } finally {
@@ -173,16 +213,18 @@ export default function InvoiceDetailPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => window.print()}
+            <a
+              href={`/portal/invoices/${invoice.id}/print`}
+              target="_blank"
+              rel="noopener"
               className="inline-flex items-center gap-1 text-xs text-secondary transition-colors hover:text-foreground"
-              title="Download / print"
+              title="Open the printable invoice to print or save as PDF"
             >
               <Download className="h-3.5 w-3.5" /> Download
-            </button>
+            </a>
             {canEdit && (
               <button
-                onClick={() => setEditing((v) => !v)}
+                onClick={toggleEditing}
                 className="inline-flex items-center gap-1 text-xs text-secondary transition-colors hover:text-foreground"
               >
                 <Pencil className="h-3.5 w-3.5" /> {editing ? "Cancel edit" : "Edit"}
@@ -223,65 +265,69 @@ export default function InvoiceDetailPage() {
           <motion.div variants={fadeUp}>
             <Panel>
               <form onSubmit={saveEdit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Due date">
-                  <input name="due_date" type="date" defaultValue={invoice.due_date ?? ""} className={inputClass} />
-                </Field>
-                <div className="sm:col-span-2">
-                  <Field label="Service description">
+                {!invoice.is_issued && (
+                  <Field label="Invoice date (this month)">
                     <input
-                      key={`desc-${editService?.id}`}
-                      name="service_description"
-                      defaultValue={(editService ? editService.description : invoice.service_description) ?? ""}
+                      name="proforma_date"
+                      type="date"
+                      min={monthStartISO()}
+                      max={indiaToday()}
+                      defaultValue={invoice.proforma_date ?? ""}
                       className={inputClass}
                     />
                   </Field>
-                </div>
-                {!invoice.is_issued && (
-                  <Field label="Agent credited">
-                    <AgentSelect options={agents} defaultValue={invoice.agent_id} />
-                  </Field>
                 )}
+                <Field label="Due date">
+                  <input name="due_date" type="date" defaultValue={invoice.due_date ?? ""} className={inputClass} />
+                </Field>
                 {!invoice.is_issued && (
-                  <Field label="Service">
-                    <ServiceSelect
-                      services={services}
-                      value={editService?.id ?? invoice.service_id ?? undefined}
-                      onChange={(s) => setEditService(s)}
-                    />
-                  </Field>
+                  <div className="flex flex-col gap-3 sm:col-span-2">
+                    <Field label="Project">
+                      <ProjectPicker
+                        projects={projects}
+                        value={formProject?.id}
+                        onChange={chooseProject}
+                        onCreated={() => refetchProjects()}
+                      />
+                    </Field>
+                    {formProject && <ProjectSummary project={formProject} />}
+                  </div>
                 )}
-                <Field label="SAC code (GST service code)">
-                  <input
-                    key={`sac-${editService?.id}`}
-                    name="sac_code"
-                    {...FIELD_RULES.sac}
-                    defaultValue={(editService ? editService.sac_code : invoice.sac_code) ?? ""}
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Taxable value (₹)">
-                  <input name="taxable_value" {...NUMBER_RULES.positiveMoney} required defaultValue={invoice.taxable_value} className={inputClass} />
-                </Field>
-                <Field label="GST rate (%)">
-                  <Select
-                    key={`gst-${editService?.id}`}
-                    name="gst_rate"
-                    required
-                    options={GST_RATE_OPTIONS}
-                    defaultValue={String(editService ? editService.gst_rate : invoice.gst_rate)}
-                  />
-                </Field>
+                {formProject ? (
+                  <div className="sm:col-span-2">
+                    <LinesEditor project={formProject} drafts={drafts} onChange={setDrafts} />
+                  </div>
+                ) : (
+                  <>
+                    <div className="sm:col-span-2">
+                      <Field label="Service description (printed on the invoice)">
+                        <input name="service_description" defaultValue={invoice.service_description ?? ""} className={inputClass} />
+                      </Field>
+                    </div>
+                    <Field label="Taxable value (₹)">
+                      <input
+                        name="taxable_value"
+                        {...NUMBER_RULES.positiveMoney}
+                        required
+                        defaultValue={invoice.taxable_value}
+                        onChange={(e) => setLegacyTaxable(Number(e.target.value))}
+                        className={inputClass}
+                      />
+                    </Field>
+                  </>
+                )}
                 <Field label="TDS rate (%)">
                   <input name="tds_rate" {...NUMBER_RULES.tdsRate} defaultValue={invoice.tds_rate} className={inputClass} />
                 </Field>
-                <div className="sm:col-span-2">
-                  <Field label="Internal remarks">
-                    <input name="internal_remarks" defaultValue={invoice.internal_remarks ?? ""} className={inputClass} />
-                  </Field>
-                </div>
+                {!invoice.is_issued && (
+                  <div className="flex items-end pb-3">
+                    <InterstateField clientGstin={clientGstin} checked={interstate} onChange={setInterstate} />
+                  </div>
+                )}
+                {editWarning && <p role="status" className="sm:col-span-2 text-sm text-warning">⚠ {editWarning}</p>}
                 {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
                 <div className="sm:col-span-2 flex justify-end gap-3">
-                  <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={() => setEditing(false)}>Cancel</Button>
+                  <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={toggleEditing}>Cancel</Button>
                   <Button type="submit" size="sm" magnetic={false} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
                 </div>
               </form>
@@ -305,18 +351,37 @@ export default function InvoiceDetailPage() {
                 <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Invoice details</h2>
                 <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
                   <DataField label="Client" value={clientName} />
+                  <DataField
+                    label="Project"
+                    value={
+                      project ? (
+                        <button
+                          onClick={() => router.push(`/portal/projects/${project.id}`)}
+                          className="text-left underline-offset-2 hover:underline"
+                        >
+                          <span className="font-mono">{project.code}</span> · {project.title}
+                        </button>
+                      ) : invoice.project_id ? null : (
+                        "None (raised before projects)"
+                      )
+                    }
+                  />
                   <DataField label="Agent credited" value={agent ? agentLabel(agent) : null} />
                   <DataField label="Proforma" value={invoice.proforma_number ? `${invoice.proforma_number}${invoice.proforma_date ? ` · ${formatDate(invoice.proforma_date)}` : ""}` : null} />
                   <DataField label="Tax invoice date" value={invoice.invoice_date ? formatDate(invoice.invoice_date) : "Set when issued"} />
-                  <DataField label="SAC code" value={invoice.sac_code} />
                   <DataField label="Due date" value={invoice.due_date ? formatDate(invoice.due_date) : null} />
                   <DataField label="GST status" value={invoice.is_issued ? invoice.gst_status : "Not yet due (proforma)"} />
                   <DataField label="TDS deducted by client" value={`${invoice.tds_rate}%`} />
-                  <DataField label="Service" value={invoice.service_title} />
-                  <DataField label="Service description" value={invoice.service_description} className="sm:col-span-2 lg:col-span-2" />
-                  <DataField label="Supporting document" value={invoice.supporting_document} />
-                  <DataField label="Internal remarks" value={invoice.internal_remarks} className="sm:col-span-2 lg:col-span-3" />
+                  <DataField label="Tax" value={invoice.is_interstate ? "IGST (inter-state)" : "CGST + SGST (intra-state)"} />
+                  {invoice.supporting_document && <DataField label="Supporting document" value={invoice.supporting_document} />}
+                  {invoice.internal_remarks && (
+                    <DataField label="Internal remarks" value={invoice.internal_remarks} className="sm:col-span-2 lg:col-span-3" />
+                  )}
                 </div>
+                <h3 className="mb-3 mt-8 text-xs tracking-eyebrow text-secondary">
+                  {invoice.lines.length > 1 ? "Services billed" : "Service billed"}
+                </h3>
+                <LinesTable lines={invoice.lines} />
               </Panel>
             </motion.div>
 

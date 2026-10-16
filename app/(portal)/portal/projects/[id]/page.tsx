@@ -2,11 +2,12 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Download, Mail, Pencil, Trash2, FolderKanban } from "lucide-react";
+import { ArrowLeft, Download, Mail, Pencil, Trash2, FolderKanban, Users } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { Panel, MetricCard, Table, Row, Cell, Empty, StatusPill, DataField } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { ProjectForm } from "@/components/portal/projects/ProjectForm";
+import { ProjectVendorsForm } from "@/components/portal/projects/ProjectVendorsForm";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
@@ -19,6 +20,7 @@ export default function ProjectDetailPage() {
   const { hasRole } = useAuth();
   const { data: project, loading, refetch, setData } = useApi<ProjectDetail>(id ? `/projects/${id}` : null);
   const [editOpen, setEditOpen] = useState(false);
+  const [vendorsOpen, setVendorsOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -92,14 +94,12 @@ export default function ProjectDetailPage() {
               <h1 className="font-sans text-3xl font-bold leading-[0.95] tracking-[-0.04em] sm:text-4xl">{project?.title ?? "…"}</h1>
               <p className="mt-2 text-sm text-secondary">
                 <span className="font-mono">{project?.code}</span>
-                {project?.brand && <> · {project.brand}</>}
                 {project?.client_name && <> · for {project.client_name}</>}
               </p>
             </div>
           </div>
           {project && (
             <div className="flex flex-wrap items-center gap-3">
-              <StatusPill status={project.status} />
               {canManage && (
                 <>
                   <Button size="sm" variant="secondary" magnetic={false} onClick={() => setEditOpen(true)}>
@@ -121,7 +121,28 @@ export default function ProjectDetailPage() {
         )}
 
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard label="Budget" value={formatINR(project?.budget ?? 0)} sub="Planned vendor spend" />
+          <MetricCard
+            label="Contract value"
+            value={project?.contract_value ? formatINR(project.contract_value) : "Not set"}
+            sub="Agreed with the client, before GST"
+          />
+          <MetricCard label="Billed" value={formatINR(project?.billed ?? 0)} sub="Invoices raised, before GST" />
+          <MetricCard
+            label="Left to bill"
+            value={project?.left_to_bill != null ? formatINR(project.left_to_bill) : "-"}
+            sub={
+              project?.over_contract
+                ? `⚠ billed ${formatINR((project.billed ?? 0) - project.contract_value)} over the contract`
+                : project?.left_to_bill != null
+                  ? "Still to invoice"
+                  : "Set a contract value to track this"
+            }
+          />
+          <MetricCard label="Margin" value={formatINR(project?.margin ?? 0)} sub="Billed minus vendor invoices" />
+        </div>
+
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard label="Vendor budget" value={formatINR(project?.budget ?? 0)} sub="Planned vendor spend" />
           <MetricCard
             label="Committed to vendors"
             value={formatINR(project?.committed_cost ?? 0)}
@@ -138,19 +159,65 @@ export default function ProjectDetailPage() {
         <Panel>
           <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
             <DataField label="Client" value={project?.client_name} />
-            <DataField label="Start date" value={project?.start_date ? formatDate(project.start_date) : null} />
-            <DataField label="End date" value={project?.end_date ? formatDate(project.end_date) : null} />
+            <DataField
+              label={project && project.services.length > 1 ? "Services billed" : "Service billed"}
+              value={
+                project && project.services.length > 0 ? (
+                  <ul className="flex flex-col gap-1">
+                    {project.services.map((s) => (
+                      <li key={s.id}>
+                        {s.title}
+                        <span className="ml-1.5 font-mono text-xs text-ink-40">SAC {s.sac_code ?? "-"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : project ? (
+                  <span className="text-warning">⚠ Not set: choose one with Edit before invoicing</span>
+                ) : null
+              }
+            />
+            <DataField label="Start month" value={project?.start_date ? monthLabel(project.start_date) : null} />
             <DataField label="Report due" value={project?.expected_report_date ? formatDate(project.expected_report_date) : null} />
             <DataField
-              label="Description"
+              label="Scope of work"
               value={project?.description ? <span className="whitespace-pre-wrap">{project.description}</span> : null}
               className="col-span-full"
             />
           </div>
         </Panel>
 
+        <section className="flex flex-col gap-4" aria-label="Client invoices">
+          <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Client invoices for this project</h2>
+          {project && project.client_invoices.length > 0 ? (
+            <Table head={["Invoice", "Date", "Taxable value", "Total", "Status"]}>
+              {project.client_invoices.map((i) => (
+                <Row key={i.id} onClick={() => router.push(`/portal/invoices/${i.id}`)}>
+                  <Cell className="font-medium">{i.display_number}</Cell>
+                  <Cell className="text-ink-40">
+                    {(i.invoice_date ?? i.proforma_date) ? formatDate((i.invoice_date ?? i.proforma_date) as string) : "-"}
+                  </Cell>
+                  <Cell className="tabular-nums">{formatINR(i.taxable_value)}</Cell>
+                  <Cell className="tabular-nums">{formatINR(i.total_amount)}</Cell>
+                  <Cell>
+                    <StatusPill status={i.status} />
+                  </Cell>
+                </Row>
+              ))}
+            </Table>
+          ) : (
+            <Empty message={loading ? "Loading…" : "No client invoices yet. Raise one from Invoices and pick this project."} />
+          )}
+        </section>
+
         <section className="flex flex-col gap-4" aria-label="Vendors">
-          <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendors and work orders</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendors and work orders</h2>
+            {canManage && project && (
+              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setVendorsOpen(true)}>
+                <Users className="h-4 w-4" /> Edit vendors
+              </Button>
+            )}
+          </div>
           {project && project.vendors.length > 0 ? (
             <Table head={["Vendor", "% of work", "Agreed cost", "Invoiced", "Work order", ...(canManage ? [""] : [])]}>
               {project.vendors.map((v) => (
@@ -184,7 +251,7 @@ export default function ProjectDetailPage() {
               ))}
             </Table>
           ) : (
-            <Empty message={loading ? "Loading…" : "No vendors on this project yet. Add them with Edit."} />
+            <Empty message={loading ? "Loading…" : "No vendors on this project yet. Add them with Edit vendors."} />
           )}
         </section>
 
@@ -214,6 +281,9 @@ export default function ProjectDetailPage() {
       {editOpen && project && (
         <ProjectForm open={editOpen} onOpenChange={setEditOpen} project={project} onSaved={setData} />
       )}
+      {vendorsOpen && project && (
+        <ProjectVendorsForm open={vendorsOpen} onOpenChange={setVendorsOpen} project={project} onSaved={setData} />
+      )}
       <Modal open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete this project?" description="Its vendor shares and work order records are removed. This cannot be undone.">
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => setDeleteOpen(false)}>
@@ -241,4 +311,9 @@ function WorkOrderState({ vendor }: { vendor: ProjectVendor }) {
       {vendor.work_order_outdated && <span className="block font-medium text-warning">⚠ Terms changed: send again</span>}
     </span>
   );
+}
+
+/** "Oct 2026" for a YYYY-MM-DD date. */
+function monthLabel(isoDate: string): string {
+  return new Date(`${isoDate}T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" });
 }

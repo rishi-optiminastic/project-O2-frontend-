@@ -14,12 +14,10 @@ import {
   Empty,
   StatusPill,
   DataField,
-  Field,
-  inputClass,
 } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
-import { AgentSelect, agentLabel } from "@/components/portal/AgentSelect";
-import { GstField } from "@/components/portal/GstField";
+import { agentLabel } from "@/components/portal/AgentSelect";
+import { ClientFields, clientBody } from "@/components/portal/clients/ClientFields";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
@@ -29,7 +27,6 @@ import { api, ApiError, type Client, type Invoice, type Agent, type AgentOption 
 import { documentDate } from "@/lib/invoice";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
-import { FIELD_RULES, NAME_MAX, TEXT_MAX } from "@/lib/validation";
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -129,10 +126,14 @@ export default function ClientDetailPage() {
           <Panel>
             <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Onboarding details</h2>
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
-              <DataField label="Registered legal name" value={client?.legal_name} />
               <DataField label="GST number" value={client?.gst_number} mono />
               <DataField label="Certificate of incorporation" value={client?.coi} mono />
-              <DataField label="Category" value={client?.category} />
+              <DataField
+                label="MSME"
+                value={client ? (client.msme ? `Yes${client.msme_number ? ` · ${client.msme_number}` : ""}` : "No") : null}
+                mono={!!client?.msme_number}
+              />
+              {client?.legal_name && <DataField label="Registered legal name" value={client.legal_name} />}
               <DataField
                 label="Referral agent"
                 value={
@@ -144,8 +145,8 @@ export default function ClientDetailPage() {
                 }
               />
               <DataField label="Onboarded" value={client ? formatDate(client.created_at) : null} />
-              <DataField label="Billing address" value={client?.billing_address} className="sm:col-span-2 lg:col-span-1" />
-              <DataField label="Notes" value={client?.notes} className="sm:col-span-2 lg:col-span-3" />
+              <DataField label="Address" value={client?.billing_address} className="sm:col-span-2 lg:col-span-1" />
+              {client?.notes && <DataField label="Notes" value={client.notes} className="sm:col-span-2 lg:col-span-3" />}
             </div>
           </Panel>
         </motion.div>
@@ -213,10 +214,8 @@ function ClientEditForm({
     e.preventDefault();
     setSaving(true);
     setError(null);
-    const fd = new FormData(e.currentTarget);
-    const body = Object.fromEntries(fd);
     try {
-      await api.patch(`/clients/${client.id}`, { ...body, agent_id: Number(fd.get("agent_id")) });
+      await api.patch(`/clients/${client.id}`, clientBody(new FormData(e.currentTarget)));
       onOpenChange(false);
       onSaved();
     } catch (err) {
@@ -229,36 +228,7 @@ function ClientEditForm({
   return (
     <Modal open={open} onOpenChange={onOpenChange} title="Edit client" description="Update the client's onboarding details.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Business name">
-          <input name="business_name" maxLength={NAME_MAX} required defaultValue={client.business_name} className={inputClass} />
-        </Field>
-        <Field label="Registered legal name">
-          <input name="legal_name" maxLength={NAME_MAX} defaultValue={client.legal_name ?? ""} className={inputClass} />
-        </Field>
-        <Field label="Official email">
-          <input name="email" type="email" required defaultValue={client.email} className={inputClass} />
-        </Field>
-        <Field label="Phone">
-          <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={client.phone ?? ""} className={inputClass} />
-        </Field>
-        <GstField defaultValue={client.gst_number} />
-        <Field label="COI">
-          <input name="coi" {...FIELD_RULES.cin} defaultValue={client.coi ?? ""} className={inputClass} />
-        </Field>
-        <Field label="Category">
-          <input name="category" maxLength={NAME_MAX} defaultValue={client.category ?? ""} placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
-        </Field>
-        <Field label="Referral agent">
-          <AgentSelect options={agents} defaultValue={client.agent_id} />
-        </Field>
-        <Field label="Billing address">
-          <input name="billing_address" maxLength={TEXT_MAX} defaultValue={client.billing_address ?? ""} className={inputClass} />
-        </Field>
-        <div className="sm:col-span-2">
-          <Field label="Notes / special instructions">
-            <textarea name="notes" maxLength={TEXT_MAX} rows={2} defaultValue={client.notes ?? ""} className={inputClass + " h-auto py-2.5"} />
-          </Field>
-        </div>
+        {open && <ClientFields client={client} agents={agents} />}
         {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { ChevronDown, Plus, X } from "lucide-react";
 import { Field, inputClass } from "@/components/portal/ui";
 import { GstField } from "@/components/portal/GstField";
 import type { Vendor, VendorBankAccount } from "@/lib/api";
@@ -32,8 +32,9 @@ function isBlank(a: VendorBankAccount) {
 }
 
 /**
- * The vendor onboarding fields shared by the create and edit forms.
- * Bank accounts are kept in state and travel in a hidden JSON field, so the
+ * The vendor onboarding fields shared by the create and edit forms: name and email up
+ * front, and the tax and bank details (needed before paying the vendor) in an optional
+ * section. Bank accounts are kept in state and travel in a hidden JSON field, so the
  * parent form can stay uncontrolled and read everything with vendorPayload().
  */
 export function VendorFields({ vendor }: { vendor?: Vendor }) {
@@ -48,6 +49,11 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
       : [EMPTY_ACCOUNT],
   );
 
+  // Open when the vendor already has any of these details, so they are never hidden by surprise.
+  const hasDetails = Boolean(
+    vendor && (vendor.phone || vendor.gst_number || vendor.msme_number || vendor.coi || vendor.pan || vendor.bank_accounts.length),
+  );
+
   function update(index: number, key: keyof VendorBankAccount, value: string) {
     setAccounts((prev) => prev.map((a, i) => (i === index ? { ...a, [key]: value } : a)));
   }
@@ -60,73 +66,85 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
       <Field label="Email">
         <input name="email" type="email" required defaultValue={vendor?.email} className={inputClass} />
       </Field>
-      <Field label="Phone">
-        <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={vendor?.phone ?? ""} className={inputClass} />
-      </Field>
-      <GstField defaultValue={vendor?.gst_number} />
-      <Field label="MSME (Udyam number, if registered)">
-        <input
-          name="msme_number"
-          defaultValue={vendor?.msme_number ?? ""}
-          placeholder="UDYAM-MH-00-0000000"
-          {...FIELD_RULES.udyam}
-          className={`${inputClass} font-mono`}
-        />
-      </Field>
-      <Field label="COI (Certificate of Incorporation)">
-        <input name="coi" {...FIELD_RULES.cin} defaultValue={vendor?.coi ?? ""} className={`${inputClass} font-mono`} />
-      </Field>
-      <Field label="PAN">
-        <input
-          name="pan"
-          defaultValue={vendor?.pan ?? ""}
-          placeholder="AAAAA0000A"
-          {...FIELD_RULES.pan}
-          className={`${inputClass} font-mono`}
-        />
-      </Field>
 
-      <fieldset className="flex flex-col gap-3 sm:col-span-2">
-        <legend className="mb-3 text-xs tracking-eyebrow text-secondary">Bank accounts</legend>
-        {accounts.map((account, index) => (
-          <div key={index} className="relative grid grid-cols-1 gap-3 rounded-2xl border border-line p-4 sm:grid-cols-2">
-            <div className="flex items-center justify-between sm:col-span-2">
-              <span className="text-xs font-medium text-secondary">Account {index + 1}</span>
-              {accounts.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => setAccounts((prev) => prev.filter((_, i) => i !== index))}
-                  aria-label={`Remove account ${index + 1}`}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-            {ACCOUNT_INPUTS.map(({ key, label, placeholder, mono, rules }) => (
-              <Field key={key} label={label}>
-                <input
-                  value={account[key]}
-                  onChange={(e) => update(index, key, e.target.value)}
-                  // An untouched account is skipped; a started one must be complete.
-                  required={!isBlank(account)}
-                  {...rules}
-                  placeholder={placeholder}
-                  className={mono ? `${inputClass} font-mono` : inputClass}
-                />
-              </Field>
+      <details open={hasDetails} className="group rounded-2xl border border-line bg-background/60 sm:col-span-2">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-medium [&::-webkit-details-marker]:hidden">
+          <span>
+            Tax and bank details <span className="font-light text-secondary">(optional)</span>
+            <span className="block text-xs font-light text-ink-40">PAN for TDS, GSTIN for input credit, bank account to pay them. Add before the first payment.</span>
+          </span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-ink-40 transition-transform group-open:rotate-180" aria-hidden />
+        </summary>
+        <div className="grid grid-cols-1 gap-4 border-t border-line p-4 sm:grid-cols-2">
+          <Field label="Phone">
+            <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={vendor?.phone ?? ""} className={inputClass} />
+          </Field>
+          <GstField defaultValue={vendor?.gst_number} />
+          <Field label="MSME (Udyam number, if registered)">
+            <input
+              name="msme_number"
+              defaultValue={vendor?.msme_number ?? ""}
+              placeholder="UDYAM-MH-00-0000000"
+              {...FIELD_RULES.udyam}
+              className={`${inputClass} font-mono`}
+            />
+          </Field>
+          <Field label="COI (Certificate of Incorporation)">
+            <input name="coi" {...FIELD_RULES.cin} defaultValue={vendor?.coi ?? ""} className={`${inputClass} font-mono`} />
+          </Field>
+          <Field label="PAN">
+            <input
+              name="pan"
+              defaultValue={vendor?.pan ?? ""}
+              placeholder="AAAAA0000A"
+              {...FIELD_RULES.pan}
+              className={`${inputClass} font-mono`}
+            />
+          </Field>
+
+          <fieldset className="flex flex-col gap-3 sm:col-span-2">
+            <legend className="mb-3 text-xs tracking-eyebrow text-secondary">Bank accounts</legend>
+            {accounts.map((account, index) => (
+              <div key={index} className="relative grid grid-cols-1 gap-3 rounded-2xl border border-line p-4 sm:grid-cols-2">
+                <div className="flex items-center justify-between sm:col-span-2">
+                  <span className="text-xs font-medium text-secondary">Account {index + 1}</span>
+                  {accounts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setAccounts((prev) => prev.filter((_, i) => i !== index))}
+                      aria-label={`Remove account ${index + 1}`}
+                      className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                {ACCOUNT_INPUTS.map(({ key, label, placeholder, mono, rules }) => (
+                  <Field key={key} label={label}>
+                    <input
+                      value={account[key]}
+                      onChange={(e) => update(index, key, e.target.value)}
+                      // An untouched account is skipped; a started one must be complete.
+                      required={!isBlank(account)}
+                      {...rules}
+                      placeholder={placeholder}
+                      className={mono ? `${inputClass} font-mono` : inputClass}
+                    />
+                  </Field>
+                ))}
+              </div>
             ))}
-          </div>
-        ))}
-        <button
-          type="button"
-          onClick={() => setAccounts((prev) => [...prev, EMPTY_ACCOUNT])}
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-secondary transition-colors hover:text-foreground"
-        >
-          <Plus className="h-4 w-4" /> Add another account
-        </button>
-        <input type="hidden" name={BANK_ACCOUNTS_FIELD} value={JSON.stringify(accounts.filter((a) => !isBlank(a)))} />
-      </fieldset>
+            <button
+              type="button"
+              onClick={() => setAccounts((prev) => [...prev, EMPTY_ACCOUNT])}
+              className="inline-flex w-fit items-center gap-1.5 text-sm text-secondary transition-colors hover:text-foreground"
+            >
+              <Plus className="h-4 w-4" /> Add another account
+            </button>
+            <input type="hidden" name={BANK_ACCOUNTS_FIELD} value={JSON.stringify(accounts.filter((a) => !isBlank(a)))} />
+          </fieldset>
+        </div>
+      </details>
     </>
   );
 }

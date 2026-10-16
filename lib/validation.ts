@@ -51,7 +51,7 @@ export const FIELD_RULES = {
     "21 character CIN (e.g. U72900MH2015PTC123456) or an LLPIN like AAB-1234",
     21,
   ),
-  sac: code("99[0-9]{4}", "6 digits starting with 99 (e.g. 998311)", 6, "numeric"),
+  sac: code("[0-9]{4,8}", "4 to 8 digits (e.g. 998311)", 8, "numeric"),
   invoiceNumber: code("[A-Za-z0-9\\/\\-]{1,16}", "Up to 16 letters, digits, - or / (GST rule 46)", 16),
   bankReference: code("[A-Za-z0-9]{6,22}", "UTR, RRN or cheque number: 6 to 22 letters or digits", 22),
   taxDocument: code("[A-Za-z0-9]{5,20}", "5 to 20 letters or digits, no spaces or symbols", 20),

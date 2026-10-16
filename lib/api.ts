@@ -253,7 +253,18 @@ export interface Agent {
   created_at: string;
 }
 
-/** A billable service. Choosing it on an invoice pre-fills description, SAC code and GST rate. */
+/** One of our bank accounts that clients pay into, kept by name and the last four digits only. */
+export interface CompanyBank {
+  id: number;
+  name: string;
+  account_last4: string;
+  /** "IndusInd Bank ··2018", as receipts record it. */
+  label: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+/** A billable service. Each project bills one or more; each becomes an invoice line with its SAC code. */
 export interface Service {
   id: number;
   title: string;
@@ -280,6 +291,9 @@ export interface Client {
   billing_address?: string | null;
   gst_number?: string | null;
   coi?: string | null;
+  /** Udyam (MSME) registered; the Udyam number is kept only when true. */
+  msme: boolean;
+  msme_number?: string | null;
   category?: string | null;
   notes?: string | null;
   agent_id: number;
@@ -296,6 +310,8 @@ export interface Payment {
   payment_mode: string;
   /** Bank account the money was received into; null on older payments. */
   bank_name: string | null;
+  /** One of our banks; null on payments recorded before banks were listed. */
+  bank_account_id: number | null;
   tds_deducted: number;
   gst_component: number;
   remarks?: string | null;
@@ -317,6 +333,27 @@ export interface PaymentReceipt {
   remarks?: string | null;
 }
 
+/** One service billed on an invoice, with its own SAC code and tax. */
+export interface InvoiceLine {
+  service_id: number | null;
+  service_title: string;
+  description: string | null;
+  sac_code: string | null;
+  gst_rate: number;
+  taxable_value: number;
+  gst_amount: number;
+  cgst: number;
+  sgst: number;
+  igst: number;
+}
+
+/** What the invoice form sends for each line. */
+export interface InvoiceLineInput {
+  service_id: number;
+  taxable_value: number;
+  description?: string | null;
+}
+
 /** Proforma stages come first; "Sent" onward is an issued GST tax invoice. */
 export const PROFORMA_STAGES = ["Draft", "Awaiting Client", "Changes Requested", "Client Approved"] as const;
 
@@ -328,6 +365,8 @@ export interface Invoice {
   /** Tax invoice number once issued, otherwise the proforma number. */
   display_number: string;
   is_issued: boolean;
+  /** Null only on invoices raised before invoices belonged to projects. */
+  project_id: number | null;
   client_id: number;
   agent_id: number;
   invoice_date: string | null;
@@ -367,6 +406,8 @@ export interface Invoice {
   issued_by_id: number | null;
   issued_at: string | null;
   created_at: string;
+  /** One per service billed; an invoice from before lines existed reads as one line. */
+  lines: InvoiceLine[];
   payments?: Payment[];
 }
 
@@ -387,10 +428,8 @@ export interface InvoiceTimelineEntry {
   created_at: string;
 }
 
-/** What a client sees at /i/<token>. */
-export interface PublicInvoiceView {
-  purpose: "approve" | "view";
-  can_act: boolean;
+/** The printed proforma / tax invoice (portal download and client link alike). */
+export interface InvoiceDocumentView {
   invoice: {
     display_number: string;
     is_issued: boolean;
@@ -413,6 +452,7 @@ export interface PublicInvoiceView {
     status: string;
     client_approved_at: string | null;
     client_approver_name: string | null;
+    lines: InvoiceLine[];
   };
   client: {
     business_name: string;
@@ -430,7 +470,16 @@ export interface PublicInvoiceView {
     bank_name: string;
     bank_account: string;
     bank_ifsc: string;
+    bank_branch: string;
   };
+  place_of_supply: string | null;
+  amount_in_words: string;
+}
+
+/** What a client sees at /i/<token>. */
+export interface PublicInvoiceView extends InvoiceDocumentView {
+  purpose: "approve" | "view";
+  can_act: boolean;
 }
 
 /** A bank account a vendor can be paid into. A vendor may have several. */
@@ -486,15 +535,32 @@ export interface ProjectVendor {
   work_order_outdated: boolean;
 }
 
+/** A service a project bills. */
+export interface ProjectService {
+  id: number;
+  title: string;
+  sac_code: string | null;
+  gst_rate: number;
+  is_active: boolean;
+}
+
 export interface Project {
   id: number;
-  /** The internal "HOC code". */
+  /** Generated (PRJ-0001) for new projects; older ones keep the code typed for them. */
   code: string;
   title: string;
   brand: string | null;
   description: string | null;
   client_id: number | null;
   client_name: string | null;
+  /** Every service the project bills; each becomes a line on its invoices. */
+  services: ProjectService[];
+  /** The first service; null only on projects made before a service was required. */
+  service_id: number | null;
+  service_title: string | null;
+  sac_code: string | null;
+  gst_rate: number | null;
+  /** Vendor cost budget. */
   budget: number;
   start_date: string | null;
   end_date: string | null;
@@ -506,6 +572,15 @@ export interface Project {
   invoiced_cost: number;
   remaining_budget: number;
   over_budget: boolean;
+  /** Fee agreed with the client, before GST; 0 when not set. */
+  contract_value: number;
+  /** Taxable value of the project's invoices that are not cancelled. */
+  billed: number;
+  /** Null when no contract value is set. */
+  left_to_bill: number | null;
+  over_contract: boolean;
+  /** Billed minus what vendors have invoiced. */
+  margin: number;
   created_at: string;
 }
 
@@ -518,6 +593,15 @@ export interface ProjectDetail extends Project {
     invoice_date: string;
     invoice_amount: number;
     net_payable: number;
+    status: string;
+  }[];
+  client_invoices: {
+    id: number;
+    display_number: string;
+    proforma_date: string | null;
+    invoice_date: string | null;
+    taxable_value: number;
+    total_amount: number;
     status: string;
   }[];
 }
@@ -726,9 +810,9 @@ export interface VendorReport {
 /** One spreadsheet row of a bulk invoice upload, checked but not yet created. */
 export interface BulkRow {
   row: number;
-  client_input: string;
+  project_input: string;
+  project_code: string | null;
   client_name: string | null;
-  service_input: string;
   service_title: string | null;
   amount: number | null;
   gst_rate: number | null;

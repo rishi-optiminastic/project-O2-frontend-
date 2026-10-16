@@ -10,6 +10,7 @@ import type { Role } from "@/lib/api";
  *   Agents         ✓    ✓    ✓    –
  *   Services       ✓    ✓    ✓    –   (everyone picks from the list on invoices)
  *   Projects       ✓    ✓    ✓    –   (edit and send work orders; every role views)
+ *   Banks          ✓    ✓    ✓    –   (everyone picks from the list on receipts)
  *   Taxation       ✓    ✓    ✓    –
  *   Approvals      ✓    ✓    ✓    –
  *   Audit Trail    ✓    –    –    –
@@ -20,6 +21,7 @@ const NON_EXEC: Role[] = ["ADMIN_CEO", "CFO", "FINANCE_MANAGER"];
 const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/portal/agents", roles: NON_EXEC },
   { prefix: "/portal/services", roles: NON_EXEC },
+  { prefix: "/portal/banks", roles: NON_EXEC },
   { prefix: "/portal/taxation", roles: NON_EXEC },
   { prefix: "/portal/approvals", roles: NON_EXEC },
   { prefix: "/portal/audit", roles: ["ADMIN_CEO"] },

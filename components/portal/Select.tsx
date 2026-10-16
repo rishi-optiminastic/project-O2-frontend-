@@ -56,7 +56,7 @@ export function Select({
         <RSelect.Content
           position="popper"
           sideOffset={6}
-          className="popover-surface z-[130] max-h-72 w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl p-1 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]"
+          className="popover-surface z-[140] max-h-72 w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl p-1 shadow-[0_30px_60px_-30px_rgba(17,17,17,0.35)]"
         >
           <RSelect.Viewport>
             {options.map((o) => (

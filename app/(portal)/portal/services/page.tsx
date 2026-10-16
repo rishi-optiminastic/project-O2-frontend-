@@ -8,12 +8,9 @@ import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type Service } from "@/lib/api";
-import { Select } from "@/components/portal/Select";
-import { FIELD_RULES, GST_RATE_OPTIONS } from "@/lib/validation";
+import { FIELD_RULES } from "@/lib/validation";
 
-const DEFAULT_GST_RATE = 18;
-
-/** Service catalogue: what the firm bills for. Invoices pick from this list. */
+/** Service catalogue: what the firm bills for. Projects pick from this list; GST is 18% on every service. */
 export default function ServicesPage() {
   const { data, loading, refetch } = useApi<Service[]>("/services?include_inactive=true");
   const [editing, setEditing] = useState<Service | "new" | null>(null);
@@ -23,7 +20,7 @@ export default function ServicesPage() {
       <div className="flex flex-col gap-8">
         <PageHeading
           title="Services"
-          description="What you bill for. Picking a service on an invoice fills in its description, SAC code and GST rate."
+          description="What you bill for. Projects pick their services from this list, and each one goes on the invoice with its SAC code."
           action={
             <Button size="sm" magnetic={false} onClick={() => setEditing("new")}>
               <Plus className="h-4 w-4" /> New service
@@ -34,15 +31,11 @@ export default function ServicesPage() {
         {loading && !data ? (
           <Empty message="Loading services…" />
         ) : data && data.length > 0 ? (
-          <Table head={["Service", "SAC code", "GST", "Status"]}>
+          <Table head={["Service", "SAC code", "Status"]}>
             {data.map((s) => (
               <Row key={s.id} onClick={() => setEditing(s)}>
-                <Cell className="max-w-md whitespace-normal font-medium">
-                  {s.title}
-                  {s.description && <span className="block text-xs font-light text-ink-40">{s.description}</span>}
-                </Cell>
-                <Cell className="text-secondary">{s.sac_code ?? "-"}</Cell>
-                <Cell className="tabular-nums">{s.gst_rate}%</Cell>
+                <Cell className="max-w-md whitespace-normal font-medium">{s.title}</Cell>
+                <Cell className="font-mono text-secondary">{s.sac_code ?? "-"}</Cell>
                 <Cell>
                   <StatusPill status={s.is_active ? "Active" : "Inactive"} />
                 </Cell>
@@ -95,12 +88,7 @@ function ServiceForm({ service, onClose, onSaved }: { service: Service | null; o
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const body = {
-      title: fd.get("title"),
-      description: fd.get("description") || null,
-      sac_code: fd.get("sac_code") || null,
-      gst_rate: Number(fd.get("gst_rate")),
-    };
+    const body = { title: fd.get("title"), sac_code: fd.get("sac_code") || null };
     run(() => (service ? api.patch(`/services/${service.id}`, body) : api.post("/services", body)));
   }
 
@@ -111,31 +99,17 @@ function ServiceForm({ service, onClose, onSaved }: { service: Service | null; o
       title={service ? "Edit service" : "New service"}
       description="Changes apply to new invoices only. Invoices already raised keep their details."
     >
-      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="sm:col-span-2">
           <Field label="Title">
-            <input name="title" required maxLength={200} defaultValue={service?.title} placeholder="Statutory audit" className={inputClass} />
+            <input name="title" required maxLength={200} defaultValue={service?.title} placeholder="Media buying" className={inputClass} />
           </Field>
         </div>
-        <div className="sm:col-span-2">
-          <Field label="Description (printed on the invoice)">
-            <textarea
-              name="description"
-              rows={3}
-              defaultValue={service?.description ?? ""}
-              placeholder="Annual statutory audit under the Companies Act, 2013"
-              className={inputClass + " h-auto py-2.5"}
-            />
-          </Field>
-        </div>
-        <Field label="SAC code (GST service code)">
-          <input name="sac_code" {...FIELD_RULES.sac} defaultValue={service?.sac_code ?? ""} placeholder="998221" className={inputClass} />
-        </Field>
-        <Field label="GST rate (%)">
-          <Select name="gst_rate" required options={GST_RATE_OPTIONS} defaultValue={String(service?.gst_rate ?? DEFAULT_GST_RATE)} />
+        <Field label="SAC code">
+          <input name="sac_code" {...FIELD_RULES.sac} defaultValue={service?.sac_code ?? ""} placeholder="998366" className={inputClass} />
         </Field>
 
-        {error && <p role="alert" className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
+        {error && <p role="alert" className="sm:col-span-3 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           {service && (
             <>

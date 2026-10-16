@@ -22,6 +22,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  Landmark,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
 import { canAccessPath } from "@/lib/rbac";
@@ -38,8 +39,6 @@ const navGroups = [
     items: [
       { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { href: "/portal/invoices", label: "Invoices", icon: FileText },
-      { href: "/portal/projects", label: "Projects", icon: FolderKanban },
-      { href: "/portal/taxation", label: "Taxation", icon: Receipt },
       { href: "/portal/reports", label: "Reports", icon: FileBarChart },
     ],
   },
@@ -50,6 +49,8 @@ const navGroups = [
       { href: "/portal/clients", label: "Clients", icon: Users },
       { href: "/portal/vendors", label: "Vendors", icon: Truck },
       { href: "/portal/services", label: "Services", icon: Layers },
+      { href: "/portal/projects", label: "Projects", icon: FolderKanban },
+      { href: "/portal/banks", label: "Banks", icon: Landmark },
     ],
   },
   {
@@ -59,6 +60,7 @@ const navGroups = [
       { href: "/portal/verification", label: "Verification", icon: CheckCircle2 },
       { href: "/portal/audit", label: "Audit Trail", icon: ScrollText },
       { href: "/portal/team", label: "Admin", icon: UserPlus },
+      { href: "/portal/taxation", label: "Taxation", icon: Receipt },
     ],
   },
 ];

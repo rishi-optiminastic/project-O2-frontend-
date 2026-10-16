@@ -4,15 +4,13 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Building2 } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
-import { PageHeading, Table, Row, Cell, Empty, Field, inputClass } from "@/components/portal/ui";
+import { PageHeading, Table, Row, Cell, Empty } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
-import { GstField } from "@/components/portal/GstField";
-import { AgentSelect } from "@/components/portal/AgentSelect";
+import { ClientFields, clientBody } from "@/components/portal/clients/ClientFields";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type Client, type AgentOption } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
-import { FIELD_RULES, NAME_MAX, TEXT_MAX } from "@/lib/validation";
 
 export default function ClientsPage() {
   const { data, loading, refetch } = useApi<Client[]>("/clients");
@@ -34,7 +32,7 @@ export default function ClientsPage() {
         />
 
         {data && data.length > 0 ? (
-          <Table head={["Business", "Email", "GST", "Category", "Onboarded"]}>
+          <Table head={["Business", "Email", "GST", "MSME", "Onboarded"]}>
             {data.map((c) => (
               <Row key={c.id} onClick={() => router.push(`/portal/clients/${c.id}`)}>
                 <Cell className="font-medium">
@@ -43,7 +41,7 @@ export default function ClientsPage() {
                 </Cell>
                 <Cell>{c.email}</Cell>
                 <Cell className="text-ink-40">{c.gst_number ?? "—"}</Cell>
-                <Cell>{c.category ?? "—"}</Cell>
+                <Cell>{c.msme ? "Yes" : "No"}</Cell>
                 <Cell className="text-ink-40">{formatDate(c.created_at)}</Cell>
               </Row>
             ))}
@@ -86,10 +84,8 @@ function ClientForm({
     e.preventDefault();
     setSaving(true);
     setError(null);
-    const fd = new FormData(e.currentTarget);
-    const body = Object.fromEntries(fd);
     try {
-      await api.post("/clients", { ...body, agent_id: Number(fd.get("agent_id")) });
+      await api.post("/clients", clientBody(new FormData(e.currentTarget)));
       onOpenChange(false);
       onSaved();
     } catch (err) {
@@ -102,36 +98,7 @@ function ClientForm({
   return (
     <Modal open={open} onOpenChange={onOpenChange} title="Onboard a client" description="Capture the client intake details.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Business name">
-          <input name="business_name" maxLength={NAME_MAX} required className={inputClass} />
-        </Field>
-        <Field label="Registered legal name">
-          <input name="legal_name" maxLength={NAME_MAX} className={inputClass} />
-        </Field>
-        <Field label="Official email">
-          <input name="email" type="email" required className={inputClass} />
-        </Field>
-        <Field label="Phone">
-          <input name="phone" type="tel" {...FIELD_RULES.phone} className={inputClass} />
-        </Field>
-        <GstField />
-        <Field label="COI">
-          <input name="coi" {...FIELD_RULES.cin} className={inputClass} />
-        </Field>
-        <Field label="Category">
-          <input name="category" maxLength={NAME_MAX} placeholder="Enterprise / Mid-market / Startup" className={inputClass} />
-        </Field>
-        <Field label="Referral agent">
-          <AgentSelect options={agents} />
-        </Field>
-        <Field label="Billing address">
-          <input name="billing_address" maxLength={TEXT_MAX} className={inputClass} />
-        </Field>
-        <div className="sm:col-span-2">
-          <Field label="Notes / special instructions">
-            <textarea name="notes" maxLength={TEXT_MAX} rows={2} className={inputClass + " h-auto py-2.5"} />
-          </Field>
-        </div>
+        {open && <ClientFields agents={agents} />}
         {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>

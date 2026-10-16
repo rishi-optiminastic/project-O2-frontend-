@@ -86,7 +86,7 @@ export default function BulkInvoicesPage() {
 
         <PageHeading
           title="Bulk upload invoices"
-          description="Create many proforma invoices at once, for one client or many. Nothing is created until every row is correct."
+          description="Create many proforma invoices at once, for one project or many. Nothing is created until every row is correct."
         />
 
         {error && (
@@ -104,8 +104,8 @@ export default function BulkInvoicesPage() {
                 <p className="text-xs tracking-eyebrow text-secondary">Step 1</p>
                 <h2 className="mt-2 text-lg font-medium">Fill in the template</h2>
                 <p className="mt-2 text-sm font-light text-secondary">
-                  One row per invoice. The template has drop-downs of your clients and services and a sheet explaining
-                  every column. GST is added from each service&apos;s rate.
+                  One row per invoice, named by project code. The template has a drop-down of your projects and a sheet
+                  explaining every column. The client comes from the project; name the service when a project bills several.
                 </p>
                 <Button size="sm" variant="secondary" magnetic={false} onClick={downloadTemplate} className="mt-5">
                   <Download className="h-4 w-4" /> Download template (.xlsx)
@@ -231,7 +231,7 @@ function PreviewSection({
         </div>
       )}
 
-      <Table head={["Row", "Client", "Service", "Amount", "GST", "Total", "Due", "Check"]}>
+      <Table head={["Row", "Project", "Service", "Amount", "GST", "Total", "Due", "Check"]}>
         {rows.map((r) => (
           <PreviewRow key={r.row} row={r} />
         ))}
@@ -246,10 +246,11 @@ function PreviewRow({ row }: { row: BulkRow }) {
     <Row>
       <Cell className="tabular-nums text-ink-40">{row.row}</Cell>
       <Cell className="font-medium">
-        {row.client_name ?? <span className="text-ink-40">{row.client_input || "-"}</span>}
+        {row.project_code ?? <span className="text-ink-40">{row.project_input || "-"}</span>}
+        {row.client_name && <span className="block text-xs font-normal text-ink-40">{row.client_name}</span>}
       </Cell>
       <Cell>
-        {row.service_title ?? <span className="text-ink-40">{row.service_input || "-"}</span>}
+        {row.service_title ?? "-"}
         {row.description && <span className="block text-xs text-ink-40">{row.description}</span>}
       </Cell>
       <Cell className="tabular-nums">{row.amount !== null ? formatINR(row.amount) : "-"}</Cell>
