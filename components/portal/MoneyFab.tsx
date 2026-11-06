@@ -10,6 +10,9 @@ import { useAuth } from "@/lib/auth";
 
 type Dialog = "receipt" | "payment" | null;
 
+/** The button shows only in the Invoices section: the list and each invoice. */
+const INVOICES_SECTION = "/portal/invoices";
+
 const fabClass =
   "fixed bottom-4 right-4 z-40 flex h-14 items-center gap-2 rounded-full bg-foreground px-5 text-sm font-medium text-white shadow-[0_18px_40px_-14px_rgba(17,17,17,0.6)] outline-none transition-transform hover:scale-[1.03] focus-visible:ring-2 focus-visible:ring-foreground/30 focus-visible:ring-offset-2 md:bottom-8 md:right-8";
 
@@ -17,7 +20,7 @@ const itemClass =
   "flex cursor-pointer items-start gap-3 rounded-xl px-3 py-2.5 text-sm text-foreground outline-none transition-colors data-[highlighted]:bg-foreground/[0.05]";
 
 /**
- * Floating button, bottom right on every portal page, for the two money
+ * Floating button, bottom right in the Invoices section, for the two money
  * entries the team makes most: a receipt from a client and a payment out.
  * Roles that cannot raise payments get the receipt straight away.
  */
@@ -31,6 +34,8 @@ export function MoneyFab() {
   const invoiceId = match ? Number(match[1]) : undefined;
 
   const close = (open: boolean) => !open && setDialog(null);
+
+  if (pathname !== INVOICES_SECTION && !pathname.startsWith(`${INVOICES_SECTION}/`)) return null;
 
   return (
     <>
