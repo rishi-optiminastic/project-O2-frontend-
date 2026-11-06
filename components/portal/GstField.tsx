@@ -37,9 +37,11 @@ const FILL: Record<string, (r: GstLookupResult) => string | null | undefined> = 
 export function GstField({
   label = "GST number",
   defaultValue,
+  required = false,
 }: {
   label?: string;
   defaultValue?: string | null;
+  required?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,6 +98,7 @@ export function GstField({
         ref={inputRef}
         name="gst_number"
         defaultValue={defaultValue ?? undefined}
+        required={required}
         className={inputClass}
         placeholder="27AAPFU0939F1ZV"
         {...FIELD_RULES.gstin}

@@ -503,10 +503,13 @@ export interface Vendor {
   phone?: string | null;
   address?: string | null;
   gst_number?: string | null;
-  /** Udyam registration number; set only for MSME-registered vendors. */
+  /** MSME registered (Yes/No). */
+  msme: boolean;
+  /** Udyam registration number; optional, kept only for MSME-registered vendors. */
   msme_number?: string | null;
   /** Certificate of Incorporation. */
   coi?: string | null;
+  /** Taken from the GSTIN. */
   pan?: string | null;
   bank_accounts: VendorBankAccount[];
   tax_applicable?: boolean;

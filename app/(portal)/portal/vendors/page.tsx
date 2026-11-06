@@ -129,7 +129,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Onboard a vendor" description="Name and email are enough to start. Add their tax and bank details before the first payment.">
+    <Modal open={open} onOpenChange={onOpenChange} title="Onboard a vendor" description="Enter the GSTIN to fill the name and address. Everything is required except the COI and MSME number.">
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <VendorFields />
         {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
