@@ -1,4 +1,27 @@
-import type { Invoice } from "@/lib/api";
+import type { Invoice, Project } from "@/lib/api";
+
+/** Our GST state when COMPANY_GSTIN is not set: 27, Maharashtra. */
+export const DEFAULT_HOME_STATE_CODE = "27";
+
+/**
+ * Whether a client is billed IGST: their GSTIN state code differs from ours.
+ * Null when the client has no GSTIN, so the user decides.
+ */
+export function isInterstate(clientGstin: string | null | undefined, homeStateCode: string | null | undefined): boolean | null {
+  const code = clientGstin?.trim().slice(0, 2);
+  if (!code || !/^\d{2}$/.test(code)) return null;
+  return code !== (homeStateCode ?? DEFAULT_HOME_STATE_CODE);
+}
+
+/** Select value meaning "not billed against a project". */
+export const NO_PROJECT = "none";
+
+export function projectOptions(projects: Pick<Project, "id" | "code" | "title">[]) {
+  return [
+    { value: NO_PROJECT, label: projects.length ? "No project" : "No project (this client has none)" },
+    ...projects.map((p) => ({ value: String(p.id), label: `${p.code} · ${p.title}` })),
+  ];
+}
 
 /** The date that identifies the document: tax invoice date once issued, else the proforma date. */
 export function documentDate(inv: Pick<Invoice, "invoice_date" | "proforma_date" | "created_at">): string {

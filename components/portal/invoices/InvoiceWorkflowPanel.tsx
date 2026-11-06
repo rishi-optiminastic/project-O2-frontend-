@@ -48,7 +48,15 @@ export function InvoiceWorkflowPanel({
   }
 
   const send = () => run(() => api.post<InvoiceWorkflowResult>(`/invoices/${invoice.id}/send-to-client`));
-  const issue = () => run(() => api.post<InvoiceWorkflowResult>(`/invoices/${invoice.id}/issue`));
+  const [exceptionReason, setExceptionReason] = useState("");
+  const canExcept = hasRole("ADMIN_CEO", "CFO");
+  const issue = () =>
+    run(() =>
+      api.post<InvoiceWorkflowResult>(
+        `/invoices/${invoice.id}/issue`,
+        exceptionReason.trim() ? { contract_exception_reason: exceptionReason.trim() } : undefined,
+      ),
+    );
 
   function submitNote(e: React.FormEvent<HTMLFormElement>, path: "client-approval" | "return", field: "note" | "reason") {
     e.preventDefault();
@@ -130,7 +138,20 @@ export function InvoiceWorkflowPanel({
             <li>· GST of {formatINR(invoice.gst_amount)} becomes payable for this month&apos;s return.</li>
             <li>· The invoice is locked. Corrections need a credit note.</li>
             <li>· {clientName} receives a link to view and download it.</li>
+            {invoice.project_id && <li>· It counts against the project&apos;s contract value; issuing is refused if it would go over.</li>}
+            <li>· Its e-invoice starts as pending until the IRN is recorded.</li>
           </ul>
+          {invoice.project_id && canExcept && !invoice.contract_exception_reason && (
+            <Field label="Contract exception reason (only if this goes over the contract)">
+              <input
+                value={exceptionReason}
+                onChange={(e) => setExceptionReason(e.target.value)}
+                maxLength={2000}
+                placeholder="Leave empty unless asked"
+                className={inputClass}
+              />
+            </Field>
+          )}
           {error && <p role="alert" className="text-sm text-danger">⚠ {error}</p>}
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" size="sm" magnetic={false} onClick={() => setDialog(null)}>Cancel</Button>

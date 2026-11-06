@@ -95,6 +95,30 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  /** Fetch a protected file into a temporary in-browser URL for previewing. Revoke it when done. */
+  async blobUrl(path: string): Promise<string> {
+    const token = getToken();
+    const res = await fetch(`${API_URL}${path}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, errorMessage(d.detail) || "Could not open the file");
+    }
+    return URL.createObjectURL(await res.blob());
+  },
+
+  /** Post a multipart form (files plus fields). */
+  form<T>(path: string, fields: Record<string, string | Blob | (string | Blob)[] | null | undefined>) {
+    const fd = new FormData();
+    for (const [key, value] of Object.entries(fields)) {
+      if (value === null || value === undefined) continue;
+      if (Array.isArray(value)) value.forEach((v) => fd.append(key, v));
+      else fd.append(key, value);
+    }
+    return request<T>(path, { method: "POST", body: fd });
+  },
+
   async login(email: string, password: string) {
     const form = new URLSearchParams({ username: email, password });
     const res = await fetch(`${API_URL}/auth/login`, {
@@ -264,6 +288,30 @@ export interface Service {
   created_at: string;
 }
 
+/** One spreadsheet row of a services upload, checked but not yet created. */
+export interface ServiceBulkRow {
+  row: number;
+  title: string;
+  description: string | null;
+  sac_code: string | null;
+  gst_rate: number | null;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface ServiceBulkPreview {
+  rows: ServiceBulkRow[];
+  /** True only when no row has an error; the upload is all or nothing. */
+  ready: boolean;
+  service_count: number;
+  error_count: number;
+}
+
+export interface ServiceBulkCreated {
+  created: number;
+  services: Service[];
+}
+
 /** Names-only agent entry for pickers; available to every finance role. */
 export interface AgentOption {
   id: number;
@@ -300,6 +348,10 @@ export interface Payment {
   gst_component: number;
   remarks?: string | null;
   attachment?: string | null;
+  /** Shared by the parts of one bank receipt split across several invoices. */
+  receipt_ref?: string | null;
+  reconciliation_status?: "Unreconciled" | "Matched" | "Reconciled" | null;
+  reconciled_at?: string | null;
 }
 
 export interface PaymentReceipt {
@@ -315,6 +367,23 @@ export interface PaymentReceipt {
   tds_deducted: number;
   gst_component: number;
   remarks?: string | null;
+}
+
+export const EINVOICE_STATUSES = ["E-invoice Pending", "E-invoice Generated", "E-invoice Not Applicable"] as const;
+export type EInvoiceStatus = (typeof EINVOICE_STATUSES)[number];
+
+/** One bank receipt settled against several invoices. */
+export interface SplitReceiptResult {
+  receipt_ref: string;
+  total_amount: number;
+  total_tds: number;
+  invoices: Invoice[];
+}
+
+export interface HomeState {
+  state_code: string | null;
+  state: string | null;
+  configured: boolean;
 }
 
 /** Proforma stages come first; "Sent" onward is an issued GST tax invoice. */
@@ -366,6 +435,15 @@ export interface Invoice {
   change_requested_by: string | null;
   issued_by_id: number | null;
   issued_at: string | null;
+  /** The client project this invoice bills; its contract value caps the amount. */
+  project_id: number | null;
+  /** Set when a CFO/CEO let this invoice exceed the project's contract value. */
+  contract_exception_reason: string | null;
+  /** E-invoice (IRN) tracking; null on proformas. */
+  einvoice_status: EInvoiceStatus | null;
+  irn: string | null;
+  einvoice_ack_number: string | null;
+  einvoice_ack_date: string | null;
   created_at: string;
   payments?: Payment[];
 }
@@ -451,11 +529,16 @@ export interface Vendor {
   phone?: string | null;
   address?: string | null;
   gst_number?: string | null;
+  msme_registered: boolean;
   /** Udyam registration number; set only for MSME-registered vendors. */
   msme_number?: string | null;
   /** Certificate of Incorporation. */
   coi?: string | null;
   pan?: string | null;
+  /** Part of the same corporate group, or an outside vendor. */
+  is_group_company: boolean;
+  /** Kept on record only; not applied to bills or payments yet. */
+  percentage_rate: number | null;
   bank_accounts: VendorBankAccount[];
   tax_applicable?: boolean;
   compliance_documents?: string | null;
@@ -476,6 +559,13 @@ export interface ProjectVendor {
   work_percent: number;
   /** Before GST. */
   agreed_cost: number;
+  scope_of_work: string | null;
+  /** Planned margin %, as entered. */
+  vendor_margin: number | null;
+  /** This vendor's share of the agreed client revenue, and what Opti expects to keep from it. */
+  allocated_revenue: number | null;
+  expected_margin: number | null;
+  expected_margin_pct: number | null;
   /** Vendor invoices recorded against this project, before GST. */
   invoiced: number;
   over_invoiced: boolean;
@@ -495,6 +585,8 @@ export interface Project {
   description: string | null;
   client_id: number | null;
   client_name: string | null;
+  agent_id: number | null;
+  agent_name: string | null;
   budget: number;
   start_date: string | null;
   end_date: string | null;
@@ -506,10 +598,49 @@ export interface Project {
   invoiced_cost: number;
   remaining_budget: number;
   over_budget: boolean;
+  /** What the client pays, before GST. Null means client invoicing is not capped. */
+  contract_value: number | null;
+  amendments_total: number;
+  effective_contract_value: number | null;
+  /** Issued client tax invoices on this project, before GST. */
+  invoiced_value: number;
+  remaining_contract_value: number | null;
+  owner_id: number | null;
+  owner_name: string | null;
+  other_expenses: number;
+  expected_profit: number | null;
+  expected_margin_pct: number | null;
+  actual_cost: number;
+  actual_profit: number;
+  actual_margin_pct: number | null;
+  /** Budget less actual cost; negative means over budget. */
+  budget_variance: number;
+  created_at: string;
+}
+
+export interface ContractAmendment {
+  id: number;
+  amount: number;
+  reason: string;
+  approved_by_id: number | null;
+  approved_by_name: string | null;
   created_at: string;
 }
 
 export interface ProjectDetail extends Project {
+  client_invoices: {
+    id: number;
+    display_number: string;
+    status: string;
+    is_issued: boolean;
+    taxable_value: number;
+    total_amount: number;
+    invoice_date: string | null;
+    proforma_date: string | null;
+  }[];
+  contract_amendments: ContractAmendment[];
+  expenses: import("@/lib/finance").ProjectExpense[];
+  reports: import("@/lib/finance").ProjectReportSummary[];
   vendor_invoices: {
     id: number;
     vendor_id: number;
@@ -566,6 +697,8 @@ export interface ApprovalAction {
   decision: string;
   comments?: string | null;
   created_at: string;
+  user_id?: number | null;
+  changes?: string | null;
 }
 
 export interface Approval {
@@ -582,6 +715,14 @@ export interface Approval {
   payment_reference?: string | null;
   released_at?: string | null;
   created_at: string;
+  vendor_invoice_id?: number | null;
+  requested_by_id?: number | null;
+  vendor_bank_account_id?: number | null;
+  cfo_approved_by_id?: number | null;
+  cfo_approved_at?: string | null;
+  ceo_approved_by_id?: number | null;
+  ceo_approved_at?: string | null;
+  released_by_id?: number | null;
   actions?: ApprovalAction[];
 }
 
@@ -595,6 +736,18 @@ export interface BankTransaction {
   counterparty?: string | null;
   verification_status: string;
   match_note?: string | null;
+  value_date?: string | null;
+  direction?: "Credit" | "Debit" | null;
+  debit?: number | null;
+  credit?: number | null;
+  balance?: number | null;
+  reference?: string | null;
+  account_number?: string | null;
+  is_duplicate?: boolean;
+  mismatch_reasons?: string | null;
+  flagged?: boolean;
+  flag_reason?: string | null;
+  reconciled_at?: string | null;
 }
 
 export interface BankStatement {
@@ -606,6 +759,16 @@ export interface BankStatement {
   transaction_count: number;
   matched_count: number;
   created_at: string;
+  import_status?: "Preview" | "Imported" | "Failed" | "Discarded" | null;
+  source_format?: string | null;
+  template?: string | null;
+  duplicate_of_id?: number | null;
+  skipped_duplicates?: number;
+  period_start?: string | null;
+  period_end?: string | null;
+  imported_at?: string | null;
+  /** JSON list of {line, message}. */
+  errors?: string | null;
 }
 
 export interface BankStatementDetail extends BankStatement {
@@ -721,6 +884,15 @@ export interface VendorReport {
   client_id?: number | null;
   vendor_id?: number | null;
   created_at: string;
+  project_id?: number | null;
+  due_date?: string | null;
+  version?: number;
+  reviewer_id?: number | null;
+  internal_reviewer?: string | null;
+  decided_at?: string | null;
+  decision_comment?: string | null;
+  submission_date?: string | null;
+  remarks?: string | null;
 }
 
 /** One spreadsheet row of a bulk invoice upload, checked but not yet created. */

@@ -9,7 +9,19 @@ import { Select } from "@/components/portal/Select";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
-import { api, ApiError, PROFORMA_STAGES, type Invoice, type Client, type AgentOption, type Service } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  PROFORMA_STAGES,
+  type Invoice,
+  type Client,
+  type AgentOption,
+  type Service,
+  type Project,
+  type HomeState,
+} from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { isInterstate, NO_PROJECT, projectOptions } from "@/lib/invoice";
 import { ServiceSelect } from "@/components/portal/ServiceSelect";
 import { AgentSelect } from "@/components/portal/AgentSelect";
 import { formatINR } from "@/lib/utils";
@@ -239,23 +251,38 @@ function CreateInvoice({
     setService(next);
     setRate(next.gst_rate);
   }
-  const [interstate, setInterstate] = useState(false);
+  const { hasRole } = useAuth();
+  const canExcept = hasRole("ADMIN_CEO", "CFO");
+  const { data: homeState } = useApi<HomeState>(open ? "/gst/home-state" : null);
+  const { data: projects } = useApi<Project[]>(open ? "/projects" : null);
   // Only explicit picks live in state; defaults follow the (async) client list.
   const [pickedClientId, setPickedClientId] = useState<number>();
   const [pickedAgentId, setPickedAgentId] = useState<number>();
+  const [pickedProjectId, setPickedProjectId] = useState<number | null>(null);
+  // Undefined means "follow the client's GSTIN"; a tick or untick overrides it.
+  const [interstateOverride, setInterstateOverride] = useState<boolean>();
   const clientId = pickedClientId ?? clients[0]?.id;
-  // The client's own agent is credited unless someone else is chosen.
-  const agentId = pickedAgentId ?? clients.find((c) => c.id === clientId)?.agent_id;
+  const client = clients.find((c) => c.id === clientId);
+  const clientProjects = (projects ?? []).filter((p) => p.client_id === clientId);
+  const project = clientProjects.find((p) => p.id === pickedProjectId);
+  // The project's agent (itself the client's by default) is credited unless someone else is chosen.
+  const agentId = pickedAgentId ?? project?.agent_id ?? client?.agent_id;
   const chosenAgent = agents?.find((a) => a.id === agentId);
+  const autoInterstate = isInterstate(client?.gst_number, homeState?.state_code);
+  const interstate = interstateOverride ?? autoInterstate ?? false;
 
   function chooseClient(id: number) {
     setPickedClientId(id);
     setPickedAgentId(undefined);
+    setPickedProjectId(null);
+    setInterstateOverride(undefined);
   }
 
   const gst = +(taxable * rate / 100).toFixed(2);
   const total = +(taxable + gst).toFixed(2);
   const half = +(gst / 2).toFixed(2);
+  const remaining = project?.remaining_contract_value ?? null;
+  const overContract = remaining !== null && taxable > remaining + 0.005;
 
   // Reference: a referral agent's existing invoices (not shown for the in-house agent).
   const showAgentInvoices = chosenAgent !== undefined && !chosenAgent.is_house;
@@ -270,6 +297,8 @@ function CreateInvoice({
       const created = await api.post<Invoice>("/invoices", {
         client_id: Number(fd.get("client_id")),
         agent_id: Number(fd.get("agent_id")),
+        project_id: project?.id ?? null,
+        contract_exception_reason: overContract ? fd.get("contract_exception_reason") || null : null,
         service_id: Number(fd.get("service_id")),
         due_date: fd.get("due_date") || null,
         service_description: fd.get("service_description"),
@@ -278,9 +307,26 @@ function CreateInvoice({
         gst_rate: Number(fd.get("gst_rate")),
         is_interstate: interstate,
         tds_rate: Number(fd.get("tds_rate") || 0),
-        supporting_document: fd.get("supporting_document") || null,
         internal_remarks: fd.get("internal_remarks") || null,
       });
+      // Files go up after the proforma exists, attached to it.
+      const files = fd.getAll("supporting_files").filter((f): f is File => f instanceof File && f.size > 0);
+      const failed: string[] = [];
+      for (const file of files) {
+        try {
+          await api.form("/documents", {
+            entity_type: "client_invoice", entity_id: String(created.id), category: "supporting", file,
+          });
+        } catch (err) {
+          failed.push(`${file.name}: ${err instanceof ApiError ? err.message : "upload failed"}`);
+        }
+      }
+      if (failed.length) {
+        // The proforma is saved; say which files to add again from its page.
+        setError(`Proforma ${created.display_number} was created, but these files were not attached: ${failed.join("; ")}`);
+        onCreated(created);
+        return;
+      }
       onOpenChange(false);
       onCreated(created);
     } catch (err) {
@@ -311,6 +357,26 @@ function CreateInvoice({
         <Field label="Agent credited">
           <AgentSelect options={agents} value={agentId} onValueChange={setPickedAgentId} />
         </Field>
+        <div className="sm:col-span-2">
+          <Field label="Project (its contract value caps this invoice)">
+            <Select
+              key={`project-${clientId}`}
+              value={project ? String(project.id) : NO_PROJECT}
+              onValueChange={(v) => {
+                setPickedProjectId(v === NO_PROJECT ? null : Number(v));
+                setPickedAgentId(undefined);
+              }}
+              options={projectOptions(clientProjects)}
+            />
+          </Field>
+          {project && (
+            <p className="mt-1.5 text-xs text-ink-40">
+              {remaining === null
+                ? "This project has no contract value, so the amount is not capped."
+                : `${formatINR(remaining)} of the contract is left to invoice (issued tax invoices count; proformas do not).`}
+            </p>
+          )}
+        </div>
 
         {/* Reference: the chosen agent's existing invoices */}
         {showAgentInvoices && (
@@ -372,14 +438,50 @@ function CreateInvoice({
         <Field label="TDS the client deducts (%) · 10% for professional fees">
           <input name="tds_rate" {...NUMBER_RULES.tdsRate} defaultValue={DEFAULT_TDS_RATE} className={inputClass} />
         </Field>
-        <div className="flex items-end gap-4">
+        <div className="flex flex-col justify-end gap-1">
           <label className="flex items-center gap-2 text-sm font-light text-secondary">
-            <input type="checkbox" checked={interstate} onChange={(e) => setInterstate(e.target.checked)} className="accent-foreground" /> Inter-state (IGST)
+            <input
+              type="checkbox"
+              checked={interstate}
+              onChange={(e) => setInterstateOverride(e.target.checked)}
+              className="accent-foreground"
+            />{" "}
+            IGST (inter-state)
           </label>
+          <span className="text-xs text-ink-40">
+            {interstateOverride !== undefined && interstateOverride !== autoInterstate && autoInterstate !== null
+              ? "Changed by hand."
+              : autoInterstate === null
+                ? "Add the client's GSTIN to detect this automatically."
+                : `Detected from the client's GSTIN (we are in ${homeState?.state ?? "state 27"}).`}
+          </span>
         </div>
+        {overContract && (
+          <div className="sm:col-span-2 rounded-2xl border border-danger/40 bg-danger/5 p-4 text-sm">
+            <p className="text-danger">
+              ⚠ This is {formatINR(taxable - Math.max(remaining ?? 0, 0))} more than the {formatINR(Math.max(remaining ?? 0, 0))} left on
+              the {project?.code} contract.
+            </p>
+            {canExcept ? (
+              <div className="mt-3">
+                <Field label="Exception reason (CFO / CEO approval, recorded in the audit trail)">
+                  <input name="contract_exception_reason" required maxLength={2000} placeholder="Client signed change order #4" className={inputClass} />
+                </Field>
+              </div>
+            ) : (
+              <p className="mt-1 text-secondary">Lower the amount, or ask the CFO or CEO to approve an exception or record a contract amendment.</p>
+            )}
+          </div>
+        )}
         <div className="sm:col-span-2">
-          <Field label="Supporting document (reference / link)">
-            <input name="supporting_document" className={inputClass} />
+          <Field label="Supporting documents (PDF, JPG, PNG, XLS, XLSX · up to 10 MB each)">
+            <input
+              name="supporting_files"
+              type="file"
+              multiple
+              accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
+              className={`${inputClass} h-auto py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-mist file:px-3 file:py-1.5 file:text-sm`}
+            />
           </Field>
         </div>
         <div className="sm:col-span-2">
@@ -413,7 +515,7 @@ function CreateInvoice({
           <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button type="submit" magnetic={false} disabled={saving}>
+          <Button type="submit" magnetic={false} disabled={saving || (overContract && !canExcept)}>
             {saving ? "Saving…" : "Create proforma"}
           </Button>
         </ModalFooter>

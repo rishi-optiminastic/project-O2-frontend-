@@ -10,10 +10,13 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
-import { api, ApiError, type Invoice, type Client, type AgentOption, type Service } from "@/lib/api";
+import { api, ApiError, type Invoice, type Client, type AgentOption, type Service, type Project } from "@/lib/api";
 import { ServiceSelect } from "@/components/portal/ServiceSelect";
 import { AgentSelect, agentLabel } from "@/components/portal/AgentSelect";
-import { documentKind } from "@/lib/invoice";
+import { documentKind, NO_PROJECT, projectOptions } from "@/lib/invoice";
+import { EInvoicePanel } from "@/components/portal/invoices/EInvoicePanel";
+import { GstStatusPanel } from "@/components/portal/invoices/GstStatusPanel";
+import { Attachments, DOC_CATEGORIES } from "@/components/portal/Attachments";
 import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES } from "@/lib/validation";
 import { Select } from "@/components/portal/Select";
 import { InvoiceWorkflowPanel } from "@/components/portal/invoices/InvoiceWorkflowPanel";
@@ -35,8 +38,11 @@ export default function InvoiceDetailPage() {
   const { data: clients } = useApi<Client[]>("/clients");
   const { data: agents } = useApi<AgentOption[]>("/agents/options");
   const { data: services } = useApi<Service[]>("/services");
+  const { data: projects } = useApi<Project[]>("/projects");
   // Choosing another service in the edit form re-fills its description, SAC and GST rate.
   const [editService, setEditService] = useState<Service>();
+  const [editProjectId, setEditProjectId] = useState<number | null | undefined>();
+  const [editInterstate, setEditInterstate] = useState<boolean>();
 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -64,6 +70,9 @@ export default function InvoiceDetailPage() {
   const client = clients?.find((c) => c.id === invoice.client_id);
   const clientName = client?.business_name ?? `Client #${invoice.client_id}`;
   const agent = agents?.find((a) => a.id === invoice.agent_id);
+  const project = projects?.find((p) => p.id === invoice.project_id);
+  const clientProjects = (projects ?? []).filter((p) => p.client_id === invoice.client_id);
+  const canExcept = hasRole("ADMIN_CEO", "CFO");
 
   const canReceive = canRecordReceipt(invoice);
   const canEdit = invoice.is_issued
@@ -84,6 +93,10 @@ export default function InvoiceDetailPage() {
         // The agent and service are fixed once the tax invoice is issued.
         ...(invoice!.is_issued ? {} : { agent_id: Number(fd.get("agent_id")) }),
         ...(!invoice!.is_issued && editService ? { service_id: editService.id } : {}),
+        // The project and IGST choice are fixed once issued, like the amounts.
+        ...(!invoice!.is_issued && editProjectId !== undefined ? { project_id: editProjectId } : {}),
+        ...(!invoice!.is_issued && editInterstate !== undefined ? { is_interstate: editInterstate } : {}),
+        ...(fd.get("contract_exception_reason") ? { contract_exception_reason: fd.get("contract_exception_reason") } : {}),
         taxable_value: Number(fd.get("taxable_value")),
         gst_rate: Number(fd.get("gst_rate")),
         tds_rate: Number(fd.get("tds_rate") || 0),
@@ -91,6 +104,8 @@ export default function InvoiceDetailPage() {
       });
       setEditing(false);
       setEditService(undefined);
+      setEditProjectId(undefined);
+      setEditInterstate(undefined);
       refetch();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to update invoice");
@@ -274,6 +289,35 @@ export default function InvoiceDetailPage() {
                 <Field label="TDS rate (%)">
                   <input name="tds_rate" {...NUMBER_RULES.tdsRate} defaultValue={invoice.tds_rate} className={inputClass} />
                 </Field>
+                {!invoice.is_issued && (
+                  <>
+                    <Field label="Project (its contract value caps this invoice)">
+                      <Select
+                        value={String((editProjectId === undefined ? invoice.project_id : editProjectId) ?? NO_PROJECT)}
+                        onValueChange={(v) => setEditProjectId(v === NO_PROJECT ? null : Number(v))}
+                        options={projectOptions(clientProjects)}
+                      />
+                    </Field>
+                    <div className="flex items-end">
+                      <label className="flex items-center gap-2 text-sm font-light text-secondary">
+                        <input
+                          type="checkbox"
+                          checked={editInterstate ?? invoice.is_interstate}
+                          onChange={(e) => setEditInterstate(e.target.checked)}
+                          className="accent-foreground"
+                        />{" "}
+                        IGST (inter-state)
+                      </label>
+                    </div>
+                    {canExcept && (
+                      <div className="sm:col-span-2">
+                        <Field label="Contract exception reason (only if this goes over the project's contract value)">
+                          <input name="contract_exception_reason" maxLength={2000} className={inputClass} />
+                        </Field>
+                      </div>
+                    )}
+                  </>
+                )}
                 <div className="sm:col-span-2">
                   <Field label="Internal remarks">
                     <input name="internal_remarks" defaultValue={invoice.internal_remarks ?? ""} className={inputClass} />
@@ -306,6 +350,20 @@ export default function InvoiceDetailPage() {
                 <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
                   <DataField label="Client" value={clientName} />
                   <DataField label="Agent credited" value={agent ? agentLabel(agent) : null} />
+                  <DataField
+                    label="Project"
+                    value={
+                      project ? (
+                        <button onClick={() => router.push(`/portal/projects/${project.id}`)} className="text-left hover:underline">
+                          {project.code} · {project.title}
+                        </button>
+                      ) : null
+                    }
+                  />
+                  {invoice.contract_exception_reason && (
+                    <DataField label="Contract exception" value={invoice.contract_exception_reason} />
+                  )}
+                  <DataField label="Tax type" value={invoice.is_interstate ? "IGST (inter-state)" : "CGST + SGST (same state)"} />
                   <DataField label="Proforma" value={invoice.proforma_number ? `${invoice.proforma_number}${invoice.proforma_date ? ` · ${formatDate(invoice.proforma_date)}` : ""}` : null} />
                   <DataField label="Tax invoice date" value={invoice.invoice_date ? formatDate(invoice.invoice_date) : "Set when issued"} />
                   <DataField label="SAC code" value={invoice.sac_code} />
@@ -314,11 +372,30 @@ export default function InvoiceDetailPage() {
                   <DataField label="TDS deducted by client" value={`${invoice.tds_rate}%`} />
                   <DataField label="Service" value={invoice.service_title} />
                   <DataField label="Service description" value={invoice.service_description} className="sm:col-span-2 lg:col-span-2" />
-                  <DataField label="Supporting document" value={invoice.supporting_document} />
+                  {invoice.supporting_document && (
+                    <DataField label="Supporting document (legacy reference)" value={invoice.supporting_document} />
+                  )}
                   <DataField label="Internal remarks" value={invoice.internal_remarks} className="sm:col-span-2 lg:col-span-3" />
                 </div>
               </Panel>
             </motion.div>
+
+            <motion.div variants={fadeUp}>
+              <Attachments
+                entityType="client_invoice"
+                entityId={invoice.id}
+                categories={DOC_CATEGORIES.client_invoice}
+                title="Supporting documents"
+                canRemove={hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER")}
+              />
+            </motion.div>
+
+            {invoice.is_issued && (
+              <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+                <EInvoicePanel invoice={invoice} onSaved={refetch} />
+                <GstStatusPanel invoice={invoice} onSaved={refetch} />
+              </motion.div>
+            )}
 
             {/* Receipts stepper (only an issued tax invoice can receive money) */}
             {invoice.is_issued && (
@@ -391,6 +468,18 @@ function PaymentStepper({ invoice }: { invoice: Invoice }) {
                 <span>{p.bank_name ?? p.payment_mode} · {p.bank_reference ?? "-"}</span>
                 <span>TDS {formatINR(p.tds_deducted)}</span>
                 {p.gst_component ? <span>GST {formatINR(p.gst_component)}</span> : null}
+                {p.receipt_ref && <span>Split receipt {p.receipt_ref}</span>}
+                {p.reconciliation_status && <span>Bank: {p.reconciliation_status}</span>}
+              </div>
+              <div className="mt-3">
+                <Attachments
+                  bare
+                  entityType="payment"
+                  entityId={p.id}
+                  categories={DOC_CATEGORIES.payment}
+                  title="Payment proof"
+                  imagesAndPdfOnly
+                />
               </div>
             </div>
           </li>

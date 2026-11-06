@@ -9,15 +9,18 @@ import { Tabs, type TabItem } from "@/components/portal/Tabs";
 import { ClientTdsTab, PurchaseGstTab, SalesGstTab, VendorTdsTab } from "@/components/portal/taxation/TaxRegisters";
 import { useApi } from "@/lib/useApi";
 import { useMonth, withMonth } from "@/lib/month";
-import { formatINR } from "@/lib/utils";
+import { formatDate, formatINR } from "@/lib/utils";
 import type { TaxationSummary } from "@/lib/api";
+import type { FilingAlerts } from "@/lib/finance";
+import { GstFilingTab } from "@/components/portal/taxation/GstFiling";
 
-type TabKey = "sales" | "purchases" | "client-tds" | "vendor-tds";
+type TabKey = "sales" | "purchases" | "client-tds" | "vendor-tds" | "filing";
 
 export default function TaxationPage() {
   const [month] = useMonth();
   const { data, loading, refetch } = useApi<TaxationSummary>(withMonth("/taxation/summary", month));
   const [tab, setTab] = useState<TabKey>("sales");
+  const { data: alerts, refetch: refetchAlerts } = useApi<FilingAlerts>("/taxation/filings/alerts");
 
   const amount = (value: number | undefined) => (loading ? "—" : <AnimatedNumber value={value ?? 0} format={formatINR} />);
 
@@ -26,6 +29,7 @@ export default function TaxationPage() {
     { key: "purchases", label: "GST on purchases" },
     { key: "client-tds", label: "TDS by clients", badge: data?.client_tds_certificates_pending, badgeTone: "warning" },
     { key: "vendor-tds", label: "TDS on vendors", badge: data?.vendor_tds_overdue_count, badgeTone: "danger" },
+    { key: "filing", label: "GST returns", badge: alerts?.alerts.length, badgeTone: alerts?.alerts.some((a) => a.level === "overdue") ? "danger" : "warning" },
   ];
 
   const gstSub = data
@@ -60,6 +64,18 @@ export default function TaxationPage() {
           <MetricCard label="Vendor TDS to deposit" tone={data?.vendor_tds_overdue_count ? "danger" : data?.vendor_tds_to_deposit ? "warning" : "success"} value={amount(data?.vendor_tds_to_deposit)} sub={tdsSub} />
         </div>
 
+        {alerts && alerts.alerts.length > 0 && (
+          <div className="flex flex-col gap-1.5 rounded-2xl border border-warning/40 bg-warning/5 p-4 text-sm">
+            {alerts.alerts.map((a) => (
+              <p key={`${a.period}-${a.form}`} className={a.level === "overdue" ? "text-danger" : "text-warning"}>
+                {a.level === "overdue" ? "⚠ Overdue" : "Due soon"}: {a.form} for {a.period}, due {formatDate(a.due_date)}
+                {a.level === "overdue" ? ` (${-a.days_left} days late)` : ` (in ${a.days_left} days)`}
+              </p>
+            ))}
+            {alerts.outstanding_tax > 0 && <p>GST still to pay on tracked returns: {formatINR(alerts.outstanding_tax)}</p>}
+          </div>
+        )}
+
         <div className="flex flex-col gap-5">
           <Tabs tabs={tabs} active={tab} onChange={setTab} layoutId="taxation-tab" label="Tax registers" />
           <TabIntro tab={tab} summary={data} />
@@ -67,6 +83,7 @@ export default function TaxationPage() {
           {tab === "purchases" && <PurchaseGstTab month={month} />}
           {tab === "client-tds" && <ClientTdsTab month={month} onChanged={refetch} />}
           {tab === "vendor-tds" && <VendorTdsTab month={month} onChanged={refetch} />}
+          {tab === "filing" && <GstFilingTab onChanged={refetchAlerts} />}
         </div>
       </div>
     </PortalShell>
@@ -81,6 +98,7 @@ function TabIntro({ tab, summary }: { tab: TabKey; summary: TaxationSummary | nu
     purchases: "GST on vendor bills. It reduces the GST you pay only when the vendor has a GSTIN.",
     "client-tds": `TDS clients deducted from what they paid us${s ? ` (${formatINR(s.client_tds_deducted)})` : ""}. Collect each client's Form 16A so the credit can be claimed in our return.`,
     "vendor-tds": `TDS we deducted from vendor bills${s ? ` (${formatINR(s.vendor_tds_deducted)}, ${formatINR(s.vendor_tds_deposited)} deposited)` : ""}. Deposit it with the government by the due date and record the challan.`,
+    filing: "The monthly GST return: GSTR-1 and GSTR-3B filing, the tax paid and its reconciliation. Tracked separately from client payments; a paid invoice never files a return.",
   };
   return <p className="text-sm font-light text-secondary">{text[tab]}</p>;
 }

@@ -18,6 +18,8 @@ import {
   ShieldCheck,
   CheckCircle2,
   ScrollText,
+  TrendingUp,
+  Download,
   UserPlus,
   LogOut,
   PanelLeftClose,
@@ -40,7 +42,9 @@ const navGroups = [
       { href: "/portal/invoices", label: "Invoices", icon: FileText },
       { href: "/portal/projects", label: "Projects", icon: FolderKanban },
       { href: "/portal/taxation", label: "Taxation", icon: Receipt },
-      { href: "/portal/reports", label: "Reports", icon: FileBarChart },
+      { href: "/portal/reports", label: "Vendor reports", icon: FileBarChart },
+      { href: "/portal/profitability", label: "Profitability", icon: TrendingUp },
+      { href: "/portal/exports", label: "Exports", icon: Download },
     ],
   },
   {
@@ -156,7 +160,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
             )}
           </Link>
 
-          <nav className="flex flex-1 flex-col gap-6 overflow-y-auto">
+          <nav data-lenis-prevent className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto">
             {groups.map((group) => (
               <div key={group.title}>
                 {!collapsed ? (
@@ -254,7 +258,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </header>
 
           {/* Mobile nav scroller */}
-          <div className="flex gap-2 overflow-x-auto border-b border-line/70 px-5 py-3 lg:hidden">
+          <div data-lenis-prevent className="flex gap-2 overflow-x-auto border-b border-line/70 px-5 py-3 lg:hidden">
             {visibleItems.map((item) => {
               const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
               return (

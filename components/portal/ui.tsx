@@ -46,6 +46,33 @@ const STATUS_TONES: Record<string, Tone> = {
   Cancelled: "danger",
   Disputed: "danger",
   Reconciled: "success",
+  // Vendor bills
+  "Invoice Created": "neutral",
+  "CFO Approval": "warning",
+  "CEO Approval": "warning",
+  Released: "success",
+  // Vendor reports
+  "Pending Submission": "neutral",
+  Resubmitted: "info",
+  // Bank import
+  Preview: "warning",
+  Imported: "success",
+  Failed: "danger",
+  Discarded: "neutral",
+  // GST returns
+  Filed: "success",
+  "Not Reconciled": "warning",
+  Mismatch: "danger",
+  "GST Pending Collection": "warning",
+  "GST Collected": "info",
+  "GST Payment Pending": "warning",
+  "GST Paid": "info",
+  "GST Reconciled": "success",
+  "GST On Hold": "danger",
+  // E-invoice (IRN)
+  "E-invoice Pending": "warning",
+  "E-invoice Generated": "success",
+  "E-invoice Not Applicable": "neutral",
   // Payment approvals
   "Submitted for CFO Approval": "warning",
   "CFO Approved": "info",

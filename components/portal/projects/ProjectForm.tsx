@@ -8,12 +8,14 @@ import { Field, inputClass } from "@/components/portal/ui";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { formatINR } from "@/lib/utils";
-import { api, ApiError, PROJECT_STATUSES, type Client, type ProjectDetail, type Vendor } from "@/lib/api";
+import { AgentSelect } from "@/components/portal/AgentSelect";
+import { api, ApiError, PROJECT_STATUSES, type AgentOption, type Client, type ProjectDetail, type Vendor } from "@/lib/api";
+import type { TeamOption } from "@/lib/finance";
 import { NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
 
 const FULL_WORK = 100;
 
-type VendorShare = { vendor_id: number; work_percent: string; agreed_cost: string };
+type VendorShare = { vendor_id: number; work_percent: string; agreed_cost: string; scope_of_work: string; vendor_margin: string };
 
 type FormState = {
   code: string;
@@ -21,7 +23,11 @@ type FormState = {
   brand: string;
   description: string;
   client_id: string;
+  /** Empty: follow the client's agent. */
+  agent_id: string;
   budget: string;
+  contract_value: string;
+  owner_id: string;
   start_date: string;
   end_date: string;
   expected_report_date: string;
@@ -43,7 +49,10 @@ function initialState(project?: ProjectDetail): FormState {
     brand: project?.brand ?? "",
     description: project?.description ?? "",
     client_id: project?.client_id ? String(project.client_id) : "",
+    agent_id: project?.agent_id ? String(project.agent_id) : "",
     budget: project ? String(project.budget) : "",
+    contract_value: project?.contract_value != null ? String(project.contract_value) : "",
+    owner_id: project?.owner_id ? String(project.owner_id) : "",
     start_date: project?.start_date ?? "",
     end_date: project?.end_date ?? "",
     expected_report_date: project?.expected_report_date ?? "",
@@ -52,6 +61,8 @@ function initialState(project?: ProjectDetail): FormState {
       vendor_id: v.vendor_id,
       work_percent: String(v.work_percent),
       agreed_cost: String(v.agreed_cost),
+      scope_of_work: v.scope_of_work ?? "",
+      vendor_margin: v.vendor_margin != null ? String(v.vendor_margin) : "",
     })),
   };
 }
@@ -75,6 +86,8 @@ export function ProjectForm({
 }) {
   const { data: clients } = useApi<Client[]>(open ? "/clients" : null);
   const { data: vendors } = useApi<Vendor[]>(open ? "/vendors" : null);
+  const { data: agents } = useApi<AgentOption[]>(open ? "/agents/options" : null);
+  const { data: team } = useApi<TeamOption[]>(open ? "/team/options" : null);
   const [form, setForm] = useState<FormState>(() => initialState(project));
   // The report date follows the end date until someone picks it themselves.
   const [reportDateTouched, setReportDateTouched] = useState(Boolean(project));
@@ -93,19 +106,25 @@ export function ProjectForm({
     }));
   }
 
-  function setShare(index: number, key: "work_percent" | "agreed_cost", value: string) {
+  function setShare(index: number, key: "work_percent" | "agreed_cost" | "scope_of_work" | "vendor_margin", value: string) {
     setForm((f) => ({ ...f, vendors: f.vendors.map((v, i) => (i === index ? { ...v, [key]: value } : v)) }));
   }
 
   const assigned = form.vendors.reduce((sum, v) => sum + num(v.work_percent), 0);
   const committed = form.vendors.reduce((sum, v) => sum + num(v.agreed_cost), 0);
   const budget = num(form.budget);
+  // The client's agent is credited unless someone picks another.
+  const clientAgentId = clients?.find((c) => String(c.id) === form.client_id)?.agent_id;
+  const agentId = form.agent_id ? Number(form.agent_id) : clientAgentId;
   const vendorName = new Map((vendors ?? []).map((v) => [v.id, v.business_name]));
   const available = (vendors ?? []).filter((v) => !form.vendors.some((s) => s.vendor_id === v.id));
 
   function addVendor(id: string) {
     const remaining = Math.max(FULL_WORK - assigned, 0);
-    set("vendors", [...form.vendors, { vendor_id: Number(id), work_percent: remaining ? String(remaining) : "", agreed_cost: "" }]);
+    set("vendors", [
+      ...form.vendors,
+      { vendor_id: Number(id), work_percent: remaining ? String(remaining) : "", agreed_cost: "", scope_of_work: "", vendor_margin: "" },
+    ]);
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -122,7 +141,11 @@ export function ProjectForm({
       brand: form.brand,
       description: form.description,
       client_id: Number(form.client_id),
+      // Sent only when chosen; otherwise the server credits the client's agent.
+      ...(form.agent_id ? { agent_id: Number(form.agent_id) } : {}),
       budget,
+      contract_value: form.contract_value.trim() === "" ? null : num(form.contract_value),
+      ...(form.owner_id ? { owner_id: Number(form.owner_id) } : {}),
       start_date: form.start_date || null,
       end_date: form.end_date || null,
       expected_report_date: form.expected_report_date || null,
@@ -131,6 +154,8 @@ export function ProjectForm({
         vendor_id: v.vendor_id,
         work_percent: num(v.work_percent),
         agreed_cost: num(v.agreed_cost),
+        scope_of_work: v.scope_of_work.trim() || null,
+        vendor_margin: v.vendor_margin.trim() === "" ? null : Number(v.vendor_margin),
       })),
     };
     try {
@@ -181,14 +206,33 @@ export function ProjectForm({
           <Field label="Client">
             <Select
               value={form.client_id}
-              onValueChange={(v) => set("client_id", v)}
+              onValueChange={(v) => setForm((f) => ({ ...f, client_id: v, agent_id: project ? f.agent_id : "" }))}
               required
               placeholder="Choose a client"
               options={(clients ?? []).map((c) => ({ value: String(c.id), label: c.business_name }))}
             />
           </Field>
         </div>
-        <Field label="Budget (₹)">
+        <div className="sm:col-span-2">
+          <Field label={project ? "Agent credited (a change is recorded in the audit trail)" : "Agent credited (default: the client's agent)"}>
+            <AgentSelect
+              key={`${form.client_id}-${agentId ?? "none"}`}
+              options={agents}
+              value={agentId}
+              onValueChange={(id) => set("agent_id", String(id))}
+            />
+          </Field>
+        </div>
+        <Field label="Contract value (₹, before GST)">
+          <input
+            {...NUMBER_RULES.money}
+            value={form.contract_value}
+            onChange={(e) => set("contract_value", e.target.value)}
+            placeholder="Leave empty for no cap"
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Vendor budget (₹)">
           <input
             {...NUMBER_RULES.money}
             value={form.budget}
@@ -199,6 +243,14 @@ export function ProjectForm({
         </Field>
         <Field label="Status">
           <Select value={form.status} onValueChange={(v) => set("status", v)} options={PROJECT_STATUSES.map((s) => ({ value: s, label: s }))} />
+        </Field>
+        <Field label={project?.owner_name && !project.owner_id ? `Project owner (was: ${project.owner_name})` : "Internal project owner"}>
+          <Select
+            value={form.owner_id || undefined}
+            onValueChange={(v) => set("owner_id", v)}
+            placeholder={team ? "Choose a team member" : "Loading…"}
+            options={(team ?? []).map((m) => ({ value: String(m.id), label: m.name }))}
+          />
         </Field>
 
         <Field label="Start date">
@@ -243,6 +295,7 @@ export function ProjectForm({
                     <th className="px-4 py-3 font-medium">Vendor</th>
                     <th className="w-36 px-4 py-3 font-medium">% of work</th>
                     <th className="w-48 px-4 py-3 font-medium">Agreed cost (₹, before GST)</th>
+                    <th className="w-28 px-4 py-3 font-medium">Margin %</th>
                     <th className="w-12 px-2 py-3" aria-label="Remove" />
                   </tr>
                 </thead>
@@ -272,6 +325,27 @@ export function ProjectForm({
                             aria-label={`${name} agreed cost in rupees`}
                             value={v.agreed_cost}
                             onChange={(e) => setShare(i, "agreed_cost", e.target.value)}
+                            className={inputClass}
+                          />
+                          <textarea
+                            aria-label={`${name} scope of work`}
+                            value={v.scope_of_work}
+                            onChange={(e) => setShare(i, "scope_of_work", e.target.value)}
+                            rows={2}
+                            maxLength={TEXT_MAX}
+                            placeholder="Scope of work for this vendor (printed on the work order)"
+                            className={`${inputClass} mt-2 h-auto py-2 text-xs`}
+                          />
+                        </td>
+                        <td className="px-4 py-2 align-top">
+                          <input
+                            type="number"
+                            min={-100}
+                            max={100}
+                            step="0.01"
+                            aria-label={`${name} planned margin percent`}
+                            value={v.vendor_margin}
+                            onChange={(e) => setShare(i, "vendor_margin", e.target.value)}
                             className={inputClass}
                           />
                         </td>

@@ -22,6 +22,7 @@ const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/portal/services", roles: NON_EXEC },
   { prefix: "/portal/taxation", roles: NON_EXEC },
   { prefix: "/portal/approvals", roles: NON_EXEC },
+  { prefix: "/portal/profitability", roles: NON_EXEC },
   { prefix: "/portal/audit", roles: ["ADMIN_CEO"] },
   { prefix: "/portal/team", roles: ["ADMIN_CEO"] },
 ];

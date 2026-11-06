@@ -5,9 +5,12 @@ import { Plus, X } from "lucide-react";
 import { Field, inputClass } from "@/components/portal/ui";
 import { GstField } from "@/components/portal/GstField";
 import type { Vendor, VendorBankAccount } from "@/lib/api";
-import { FIELD_RULES, NAME_MAX } from "@/lib/validation";
+import { FIELD_RULES, NAME_MAX, NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
 
 const BANK_ACCOUNTS_FIELD = "bank_accounts";
+const GROUP_FIELD = "is_group_company";
+const MSME_FIELD = "msme_registered";
+const RATE_FIELD = "percentage_rate";
 
 const EMPTY_ACCOUNT: VendorBankAccount = { account_holder: "", bank_name: "", account_number: "", ifsc_code: "" };
 
@@ -48,32 +51,77 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
       : [EMPTY_ACCOUNT],
   );
 
+  const [groupCompany, setGroupCompany] = useState(vendor?.is_group_company ?? false);
+  const [msme, setMsme] = useState(vendor?.msme_registered ?? false);
+
   function update(index: number, key: keyof VendorBankAccount, value: string) {
     setAccounts((prev) => prev.map((a, i) => (i === index ? { ...a, [key]: value } : a)));
   }
 
   return (
     <>
-      <Field label="Vendor name">
+      <div className="sm:col-span-2">
+        <Field label="Vendor type">
+          <Segmented
+            value={groupCompany ? "group" : "others"}
+            onChange={(v) => setGroupCompany(v === "group")}
+            options={[
+              { value: "group", label: "Group company" },
+              { value: "others", label: "Others" },
+            ]}
+          />
+          <input type="hidden" name={GROUP_FIELD} value={groupCompany ? "true" : "false"} />
+        </Field>
+      </div>
+      <Field label="Business name">
         <input name="business_name" maxLength={NAME_MAX} required defaultValue={vendor?.business_name} className={inputClass} />
       </Field>
-      <Field label="Email">
+      <Field label="Official email">
         <input name="email" type="email" required defaultValue={vendor?.email} className={inputClass} />
       </Field>
       <Field label="Phone">
         <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={vendor?.phone ?? ""} className={inputClass} />
       </Field>
       <GstField defaultValue={vendor?.gst_number} />
-      <Field label="MSME (Udyam number, if registered)">
+      <div className="sm:col-span-2">
+        <Field label="Address (filled from the GSTIN when available)">
+          <textarea name="address" rows={2} maxLength={TEXT_MAX} defaultValue={vendor?.address ?? ""} className={`${inputClass} h-auto py-2.5`} />
+        </Field>
+      </div>
+      <Field label="MSME registered?">
+        <Segmented
+          value={msme ? "yes" : "no"}
+          onChange={(v) => setMsme(v === "yes")}
+          options={[
+            { value: "yes", label: "Yes" },
+            { value: "no", label: "No" },
+          ]}
+        />
+        <input type="hidden" name={MSME_FIELD} value={msme ? "true" : "false"} />
+      </Field>
+      {msme ? (
+        <Field label="MSME number (Udyam, optional)">
+          <input
+            name="msme_number"
+            defaultValue={vendor?.msme_number ?? ""}
+            placeholder="UDYAM-MH-00-0000000"
+            {...FIELD_RULES.udyam}
+            className={`${inputClass} font-mono`}
+          />
+        </Field>
+      ) : (
+        <div className="hidden sm:block" aria-hidden />
+      )}
+      <Field label="Percentage rate (%) · on record only">
         <input
-          name="msme_number"
-          defaultValue={vendor?.msme_number ?? ""}
-          placeholder="UDYAM-MH-00-0000000"
-          {...FIELD_RULES.udyam}
-          className={`${inputClass} font-mono`}
+          name={RATE_FIELD}
+          {...NUMBER_RULES.percent}
+          defaultValue={vendor?.percentage_rate ?? ""}
+          placeholder="e.g. 10"
+          className={inputClass}
         />
       </Field>
-      <Field label="COI (Certificate of Incorporation)">
+      <Field label="COI (Certificate of Incorporation, optional)">
         <input name="coi" {...FIELD_RULES.cin} defaultValue={vendor?.coi ?? ""} className={`${inputClass} font-mono`} />
       </Field>
       <Field label="PAN">
@@ -131,9 +179,55 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
   );
 }
 
+/** Two-option pill toggle used for the vendor type and MSME choices. */
+function Segmented({
+  value,
+  onChange,
+  options,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div role="radiogroup" className="inline-flex w-fit rounded-xl border border-line bg-white/50 p-1">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={
+            "rounded-lg px-4 py-1.5 text-sm transition-colors " +
+            (value === o.value ? "bg-foreground text-white" : "text-secondary hover:text-foreground")
+          }
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** Reads a form that contains VendorFields into the API request body. */
 export function vendorPayload(form: HTMLFormElement) {
   const fd = new FormData(form);
-  const { [BANK_ACCOUNTS_FIELD]: accounts, ...fields } = Object.fromEntries(fd);
-  return { ...fields, bank_accounts: JSON.parse(String(accounts ?? "[]")) as VendorBankAccount[] };
+  const {
+    [BANK_ACCOUNTS_FIELD]: accounts,
+    [GROUP_FIELD]: group,
+    [MSME_FIELD]: msme,
+    [RATE_FIELD]: rate,
+    ...fields
+  } = Object.fromEntries(fd);
+  const msmeRegistered = msme === "true";
+  return {
+    ...fields,
+    is_group_company: group === "true",
+    msme_registered: msmeRegistered,
+    // Not registered: the Udyam number is not kept.
+    ...(msmeRegistered ? {} : { msme_number: null }),
+    percentage_rate: String(rate ?? "").trim() === "" ? null : Number(rate),
+    bank_accounts: JSON.parse(String(accounts ?? "[]")) as VendorBankAccount[],
+  };
 }

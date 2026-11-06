@@ -25,7 +25,9 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
-import { api, ApiError, type Vendor, type VendorInvoice, type Project, TDS_SECTIONS } from "@/lib/api";
+import { api, ApiError, type Vendor, type Project, TDS_SECTIONS } from "@/lib/api";
+import type { VendorBill } from "@/lib/finance";
+import { Attachments, DOC_CATEGORIES } from "@/components/portal/Attachments";
 import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES, indiaToday, pastDateRule } from "@/lib/validation";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
@@ -38,7 +40,9 @@ export default function VendorDetailPage() {
 
   const { data: vendor, loading, refetch } = useApi<Vendor>(id ? `/vendors/${id}` : null);
   const [month] = useMonth();
-  const { data: allInvoices, refetch: refetchInvoices } = useApi<VendorInvoice[]>(withMonth("/vendors/invoices/all", month));
+  const { data: billList, refetch: refetchInvoices } = useApi<VendorBill[]>(
+    id ? withMonth(`/vendors/invoices/all?vendor_id=${id}`, month) : null,
+  );
   const { data: allProjects } = useApi<Project[]>("/projects");
 
   const [busy, setBusy] = useState(false);
@@ -48,7 +52,7 @@ export default function VendorDetailPage() {
 
   const canManage = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
   const canAddInvoice = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER", "FINANCE_EXECUTIVE");
-  const invoices = (allInvoices ?? []).filter((i) => i.vendor_id === vid);
+  const invoices = billList ?? [];
   // This vendor's share of each project it works on.
   const projects = (allProjects ?? []).flatMap((p) =>
     p.vendors.filter((v) => v.vendor_id === vid).map((share) => ({ project: p, share })),
@@ -146,8 +150,18 @@ export default function VendorDetailPage() {
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
               <DataField label="GST number" value={vendor?.gst_number} mono />
               <DataField label="PAN" value={vendor?.pan} mono />
-              <DataField label="MSME (Udyam)" value={vendor?.msme_number ?? (vendor ? "Not registered" : null)} mono={!!vendor?.msme_number} />
+              <DataField
+                label="MSME"
+                value={vendor ? (vendor.msme_registered ? vendor.msme_number ?? "Yes (number not given)" : "No") : null}
+                mono={!!vendor?.msme_number}
+              />
               <DataField label="COI" value={vendor?.coi} mono />
+              <DataField label="Vendor type" value={vendor ? (vendor.is_group_company ? "Group company" : "Others") : null} />
+              <DataField
+                label="Percentage rate"
+                value={vendor?.percentage_rate != null ? `${vendor.percentage_rate}% · on record, not applied to bills` : vendor ? "Not set" : null}
+              />
+              <DataField label="Address" value={vendor?.address} className="sm:col-span-2" />
             </div>
           </Panel>
         </motion.div>
@@ -210,17 +224,21 @@ export default function VendorDetailPage() {
             )}
           </div>
           {invoices.length > 0 ? (
-            <Table head={["Invoice", "Date", "Amount", "TDS", "Net payable", "Status"]}>
+            <Table head={["Invoice", "Date", "Gross", "TDS", "Net payable", "Stage", "Bank"]}>
               {invoices.map((inv) => (
-                <Row key={inv.id}>
-                  <Cell className="font-medium">{inv.invoice_number}</Cell>
+                <Row key={inv.id} onClick={() => router.push(`/portal/vendors/invoices/${inv.id}`)}>
+                  <Cell className="font-medium">
+                    {inv.invoice_number}
+                    {inv.project_code && <span className="block font-mono text-xs text-ink-40">{inv.project_code}</span>}
+                  </Cell>
                   <Cell className="text-ink-40">{formatDate(inv.invoice_date)}</Cell>
-                  <Cell className="tabular-nums">{formatINR(inv.invoice_amount)}</Cell>
+                  <Cell className="tabular-nums">{formatINR(inv.gross_amount)}</Cell>
                   <Cell className="tabular-nums text-ink-40">{formatINR(inv.tds_amount)}</Cell>
                   <Cell className="tabular-nums">{formatINR(inv.net_payable)}</Cell>
                   <Cell>
-                    <StatusPill status={inv.status} />
+                    <StatusPill status={inv.stage} />
                   </Cell>
+                  <Cell className="text-xs text-ink-40">{inv.bank_verification}</Cell>
                 </Row>
               ))}
             </Table>
@@ -228,6 +246,18 @@ export default function VendorDetailPage() {
             <Empty message="No vendor invoices yet." />
           )}
         </motion.div>
+
+        {vendor && (
+          <motion.div variants={fadeUp}>
+            <Attachments
+              entityType="vendor"
+              entityId={vendor.id}
+              categories={DOC_CATEGORIES.vendor}
+              title="Compliance documents and contract"
+              canRemove={canManage}
+            />
+          </motion.div>
+        )}
       </motion.div>
 
       <VendorInvoiceForm

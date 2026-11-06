@@ -30,6 +30,8 @@ import { documentDate } from "@/lib/invoice";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
 import { FIELD_RULES, NAME_MAX, TEXT_MAX } from "@/lib/validation";
+import { ClientGstPanel } from "@/components/portal/ClientGstPanel";
+import { Attachments, DOC_CATEGORIES } from "@/components/portal/Attachments";
 
 export default function ClientDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -149,6 +151,24 @@ export default function ClientDetailPage() {
             </div>
           </Panel>
         </motion.div>
+
+        {client && (
+          <motion.div variants={fadeUp}>
+            <ClientGstPanel client={client} />
+          </motion.div>
+        )}
+
+        {client && (
+          <motion.div variants={fadeUp}>
+            <Attachments
+              entityType="client"
+              entityId={client.id}
+              categories={DOC_CATEGORIES.client}
+              title="Compliance documents"
+              canRemove={canManage}
+            />
+          </motion.div>
+        )}
 
         {/* Invoices */}
         <motion.div variants={fadeUp} className="flex flex-col gap-4">

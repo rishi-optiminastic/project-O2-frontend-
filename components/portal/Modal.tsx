@@ -53,7 +53,7 @@ export function Modal({
               </Dialog.Close>
             </div>
             {/* Scrollable body. A footer pins to its bottom edge, so it drops the bottom padding. */}
-            <div className="overflow-y-auto px-7 py-6 has-[[data-modal-footer]]:pb-0">{children}</div>
+            <div data-lenis-prevent className="min-h-0 overflow-y-auto overscroll-contain px-7 py-6 has-[[data-modal-footer]]:pb-0">{children}</div>
           </motion.div>
         </Dialog.Content>
       </Dialog.Portal>
