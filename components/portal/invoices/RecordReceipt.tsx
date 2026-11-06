@@ -12,21 +12,13 @@ import { emitPortalEvent, PORTAL_EVENTS } from "@/lib/events";
 import { api, ApiError, type Client, type CompanyBank, type Invoice } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { FIELD_RULES, NUMBER_RULES, indiaToday, pastDateRule } from "@/lib/validation";
-
-/** Rounding slack, matching the backend's settlement tolerance. */
-const TOLERANCE = 0.01;
+import { RECEIPT_TOLERANCE, tdsStillExpected } from "@/lib/receipts";
 
 const CLOSED_STATUSES = ["Cancelled", "Fully Paid"];
 
 /** A receipt can only be recorded against an issued tax invoice that still has money due. */
 export function canRecordReceipt(invoice: Pick<Invoice, "is_issued" | "status">): boolean {
   return invoice.is_issued && !CLOSED_STATUSES.includes(invoice.status);
-}
-
-/** TDS the client has yet to deduct; it settles part of what is due without cash. */
-function tdsStillExpected(invoice: Invoice): number {
-  const tdsSoFar = (invoice.payments ?? []).reduce((sum, p) => sum + p.tds_deducted, 0);
-  return Math.min(Math.max(+(invoice.expected_tds - tdsSoFar).toFixed(2), 0), invoice.amount_pending);
 }
 
 /**
@@ -147,7 +139,7 @@ function ReceiptForm({ invoice, onDone }: { invoice: Invoice; onDone: () => void
       setError("Choose the bank the money was received into.");
       return;
     }
-    if (amount > invoice.amount_pending + TOLERANCE) {
+    if (amount > invoice.amount_pending + RECEIPT_TOLERANCE) {
       setError(`Receipt of ${formatINR(amount)} exceeds the pending amount of ${formatINR(invoice.amount_pending)}.`);
       return;
     }
