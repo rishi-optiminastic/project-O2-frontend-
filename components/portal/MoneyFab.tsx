@@ -42,7 +42,7 @@ export function MoneyFab() {
       {canRequestPayment ? (
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
-            <button type="button" aria-label="Record a receipt or a payment" className={`${fabClass} group`}>
+            <button type="button" aria-label="Record an inward or outward payment" className={`${fabClass} group`}>
               <Plus className="h-5 w-5 transition-transform group-data-[state=open]:rotate-45" strokeWidth={1.8} />
               Record
             </button>
@@ -59,7 +59,7 @@ export function MoneyFab() {
                   <ArrowDownLeft className="h-4 w-4" strokeWidth={1.8} />
                 </span>
                 <span>
-                  <span className="block font-medium">Record receipt</span>
+                  <span className="block font-medium">Inward payment</span>
                   <span className="block text-xs text-ink-40">Money in from a client, against an invoice</span>
                 </span>
               </DropdownMenu.Item>
@@ -68,7 +68,7 @@ export function MoneyFab() {
                   <ArrowUpRight className="h-4 w-4" strokeWidth={1.8} />
                 </span>
                 <span>
-                  <span className="block font-medium">Record payment</span>
+                  <span className="block font-medium">Outward payment</span>
                   <span className="block text-xs text-ink-40">Money out to a vendor, after CFO and CEO approval</span>
                 </span>
               </DropdownMenu.Item>
@@ -76,9 +76,9 @@ export function MoneyFab() {
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       ) : (
-        <button type="button" onClick={() => setDialog("receipt")} aria-label="Record a receipt from a client" className={fabClass}>
+        <button type="button" onClick={() => setDialog("receipt")} aria-label="Record an inward payment from a client" className={fabClass}>
           <ArrowDownLeft className="h-5 w-5" strokeWidth={1.6} />
-          Record receipt
+          Inward payment
         </button>
       )}
 

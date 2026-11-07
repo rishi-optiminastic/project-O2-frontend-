@@ -209,7 +209,13 @@ export interface GstLookupResult {
   trade_name?: string | null;
   address?: string | null;
   status?: string | null;
-  source: "offline" | "appyflow";
+  taxpayer_type?: string | null;
+  constitution?: string | null;
+  registration_date?: string | null;
+  cancellation_date?: string | null;
+  nature_of_business?: string[] | null;
+  einvoice_enabled?: boolean | null;
+  source: "offline" | "apiserver";
   message?: string | null;
 }
 

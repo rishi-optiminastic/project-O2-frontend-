@@ -132,10 +132,23 @@ function GstStatus({ state }: { state: State }) {
   const r = state.result;
   const name = r.legal_name ?? r.trade_name;
   const bits = [name, r.state, r.status].filter(Boolean).join(" · ");
+  const details = [
+    r.pan && `PAN ${r.pan}`,
+    r.taxpayer_type,
+    r.constitution,
+    r.registration_date && `Registered ${r.registration_date}`,
+    r.einvoice_enabled != null && (r.einvoice_enabled ? "E-invoice (IRN) applicable" : "E-invoice not applicable"),
+  ].filter(Boolean).join(" · ");
+  const inactive = r.status && r.status !== "Active";
   return (
-    <span className="mt-1 inline-flex items-center gap-1.5 text-xs text-secondary">
-      <CheckCircle2 className="h-3 w-3 text-foreground" />
-      {name ? `Verified — ${bits}` : `Valid · PAN ${r.pan ?? "—"} · ${r.state ?? ""}`}
+    <span className="mt-1 flex flex-col gap-0.5 text-xs text-secondary">
+      <span className="inline-flex items-center gap-1.5">
+        {inactive ? <AlertCircle className="h-3 w-3 text-danger" /> : <CheckCircle2 className="h-3 w-3 text-foreground" />}
+        {name ? `Verified — ${bits}` : `Valid · PAN ${r.pan ?? "—"} · ${r.state ?? ""}`}
+      </span>
+      {name && details && <span className="pl-[18px] text-ink-40">{details}</span>}
+      {inactive && <span className="pl-[18px] text-danger">This GSTIN is {r.status!.toLowerCase()}. Check before onboarding.</span>}
+      {!name && r.message && <span className="pl-[18px] text-ink-40">{r.message}</span>}
     </span>
   );
 }
