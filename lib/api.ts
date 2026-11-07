@@ -209,7 +209,7 @@ export interface GstLookupResult {
   trade_name?: string | null;
   address?: string | null;
   status?: string | null;
-  source: "offline" | "appyflow";
+  source: "offline" | "apiserver";
   message?: string | null;
 }
 
