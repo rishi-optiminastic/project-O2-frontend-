@@ -1,0 +1,118 @@
+# Avora Secrets deploy driver for a Vercel-hosted app. Copy into the frontend
+# repo (.github/workflows/avora-deploy-vercel.yml) and create the secrets listed
+# in deploy/README.md.
+#
+# A managed host has no file on a box to write, so this driver is the Vercel
+# API instead of SSH: upsert the env vars on the Vercel project, then hit a
+# deploy hook so a fresh build picks them up. The rebuild also covers
+# NEXT_PUBLIC_* values that get inlined into the client bundle at build time —
+# on this path a deploy IS a rebuild, so they are never stale.
+#
+# Trigger modes mirror avora-deploy.yml: repository_dispatch from the Avora
+# backend (deployment_id, once DEPLOY-API v2 exists) or workflow_dispatch from
+# the VS Code extension / Actions tab (project_id + environment).
+#
+# Environment -> Vercel target mapping: "production" -> production, everything
+# else -> preview. Values are never echoed; only key names appear in logs.
+
+name: Avora deploy (Vercel)
+
+on:
+  repository_dispatch:
+    types: [avora-deploy]
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: "Avora project id"
+        required: true
+      environment:
+        description: "Environment (e.g. staging, production)"
+        required: true
+
+concurrency:
+  group: avora-vercel-${{ github.event.client_payload.project_id || inputs.project_id }}-${{ github.event.client_payload.environment || inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AVORA_URL: ${{ secrets.AVORA_URL }}
+      AVORA_DEPLOY_TOKEN: ${{ secrets.AVORA_DEPLOY_TOKEN }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      DEPLOYMENT_ID: ${{ github.event.client_payload.deployment_id }}
+      PROJECT_ID: ${{ github.event.client_payload.project_id || inputs.project_id }}
+      ENVIRONMENT: ${{ github.event.client_payload.environment || inputs.environment }}
+    steps:
+      - name: Fetch env content from Avora
+        run: |
+          set -euo pipefail
+          if [ -n "${DEPLOYMENT_ID:-}" ]; then
+            curl -sfS \
+              -H "Authorization: Bearer $AVORA_DEPLOY_TOKEN" \
+              "$AVORA_URL/api/v1/envsync/agent/deployments/$DEPLOYMENT_ID" \
+              > job.json
+            jq -r .content job.json > env.content
+          else
+            curl -sfS \
+              -H "Authorization: Bearer $AVORA_DEPLOY_TOKEN" \
+              "$AVORA_URL/api/v1/envsync/projects/$PROJECT_ID/env?environment=$ENVIRONMENT" \
+              > head.json
+            jq -r .content head.json > env.content
+          fi
+          test -s env.content
+
+      - name: Upsert env vars on the Vercel project
+        run: |
+          set -euo pipefail
+          if [ "$ENVIRONMENT" = "production" ]; then
+            TARGETS='["production"]'
+          else
+            TARGETS='["preview"]'
+          fi
+          # KEY=VALUE lines -> Vercel's env array. Comments/blank lines skipped;
+          # values stay in files and JSON bodies, never on a command line.
+          jq -Rn --argjson targets "$TARGETS" '
+            [inputs
+             | select(test("^\\s*(#|$)") | not)
+             | capture("^\\s*(?:export\\s+)?(?<key>[A-Za-z_][A-Za-z0-9_.]*)\\s*=(?<value>.*)$")
+             | {key: .key, value: .value, type: "encrypted", target: $targets}]
+          ' < env.content > envs.json
+          COUNT=$(jq length envs.json)
+          echo "upserting $COUNT env var(s): $(jq -r '[.[].key] | join(", ")' envs.json)"
+          curl -sfS -X POST \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @envs.json \
+            "https://api.vercel.com/v10/projects/$VERCEL_PROJECT_ID/env?upsert=true" \
+            > upsert.json
+          # Surface per-key failures instead of pretending success.
+          jq -e '(.failed // []) | length == 0' upsert.json > /dev/null \
+            || { echo "some keys failed:"; jq '.failed' upsert.json; exit 1; }
+
+      - name: Trigger a redeploy
+        run: |
+          set -euo pipefail
+          curl -sfS -X POST "${{ secrets.VERCEL_DEPLOY_HOOK }}" > /dev/null
+          echo "deploy hook fired - the new build picks up the updated env"
+
+      - name: Report result to Avora (backend mode only)
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOYMENT_ID:-}" ]; then
+            echo "direct mode - no deployment record to report to"
+            exit 0
+          fi
+          if [ "${{ job.status }}" = "success" ]; then
+            BODY='{"status":"success","message":"Vercel env updated + redeploy triggered","server_env_hash":null}'
+          else
+            BODY='{"status":"failed","message":"Vercel env update failed - see the workflow run","server_env_hash":null}'
+          fi
+          curl -sfS -X POST \
+            -H "Authorization: Bearer $AVORA_DEPLOY_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$BODY" \
+            "$AVORA_URL/api/v1/envsync/agent/deployments/$DEPLOYMENT_ID/result"
