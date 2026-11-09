@@ -215,8 +215,10 @@ export interface GstLookupResult {
   cancellation_date?: string | null;
   nature_of_business?: string[] | null;
   einvoice_enabled?: boolean | null;
-  source: "offline" | "apiserver";
+  source: "offline" | "gstverify";
   message?: string | null;
+  /** GSTVerify credits left after this lookup. */
+  credits_remaining?: number | null;
 }
 
 export interface RecentInvoice {

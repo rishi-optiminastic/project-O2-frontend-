@@ -158,7 +158,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
             )}
           </Link>
 
-          <nav className="flex flex-1 flex-col gap-6 overflow-y-auto">
+          {/* data-lenis-prevent: the root Lenis smooth-scroller otherwise swallows the
+              wheel and this list can never scroll on short screens. */}
+          <nav
+            data-lenis-prevent
+            className="sidebar-scroll -mr-2 flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto overscroll-contain pr-2"
+          >
             {groups.map((group) => (
               <div key={group.title}>
                 {!collapsed ? (

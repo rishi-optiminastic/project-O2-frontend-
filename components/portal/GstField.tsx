@@ -148,7 +148,13 @@ function GstStatus({ state }: { state: State }) {
       </span>
       {name && details && <span className="pl-[18px] text-ink-40">{details}</span>}
       {inactive && <span className="pl-[18px] text-danger">This GSTIN is {r.status!.toLowerCase()}. Check before onboarding.</span>}
-      {!name && r.message && <span className="pl-[18px] text-ink-40">{r.message}</span>}
+      {r.message && <span className={r.credits_remaining === 0 ? "pl-[18px] text-danger" : "pl-[18px] text-ink-40"}>{r.message}</span>}
+      {r.credits_remaining != null && r.credits_remaining > 0 && (
+        <span className={r.credits_remaining <= 3 ? "pl-[18px] text-danger" : "pl-[18px] text-ink-40"}>
+          {r.credits_remaining} GST lookup credit{r.credits_remaining === 1 ? "" : "s"} left
+          {r.credits_remaining <= 3 && " — top up GSTVerify soon"}
+        </span>
+      )}
     </span>
   );
 }
