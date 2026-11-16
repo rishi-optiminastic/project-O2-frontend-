@@ -4,7 +4,6 @@ import type { KeyboardEvent, ReactNode } from "react";
 import { motion } from "framer-motion";
 import { ArrowUp, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { stagger } from "@/lib/motion";
 import { DottedSparkline } from "@/components/charts/DottedSparkline";
 
 const rowReveal = {
@@ -246,14 +245,8 @@ export function Table({ head, children }: { head: string[]; children: ReactNode 
             ))}
           </tr>
         </thead>
-        <motion.tbody
-          variants={stagger(0.05)}
-          initial="hidden"
-          whileInView="show"
-          viewport={{ once: true, amount: 0.05 }}
-        >
-          {children}
-        </motion.tbody>
+        {/* Rows fade in on their own (see Row), so rows added later always appear. */}
+        <tbody>{children}</tbody>
       </table>
     </div>
   );
@@ -274,6 +267,10 @@ export function Row({ children, onClick }: { children: ReactNode; onClick?: () =
   return (
     <motion.tr
       variants={rowReveal}
+      // Each row reveals itself. Left to the table's one-time reveal, a row added after it
+      // (data arriving late, a refresh, a new record) stayed invisible and left a blank gap.
+      initial="hidden"
+      animate="show"
       onClick={onClick}
       onKeyDown={onKeyDown}
       tabIndex={onClick ? 0 : undefined}

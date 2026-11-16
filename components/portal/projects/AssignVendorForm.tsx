@@ -236,7 +236,7 @@ export function AssignVendorsPanel({
                       {firstOfService && (
                         <>
                           <span className="font-medium">{service?.title ?? "Service"}</span>
-                          <span className="ml-1.5 font-mono text-xs text-ink-40">SAC {service?.sac_code ?? "-"}</span>
+                          <span className="mt-1 block w-fit rounded-md border border-line bg-mist/60 px-1.5 py-0.5 font-mono text-[11px] text-secondary">SAC {service?.sac_code ?? "—"}</span>
                         </>
                       )}
                       {lastOfService && !r.locked && options.length > 0 && (

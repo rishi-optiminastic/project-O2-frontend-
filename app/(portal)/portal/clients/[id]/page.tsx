@@ -24,8 +24,9 @@ import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
 import { api, ApiError, type Client, type Invoice, type Agent, type AgentOption } from "@/lib/api";
-import { documentDate } from "@/lib/invoice";
+import { documentDate, documentKind } from "@/lib/invoice";
 import { MonthFilter } from "@/components/portal/MonthFilter";
+import { Tabs } from "@/components/portal/Tabs";
 import { useMonth, withMonth } from "@/lib/month";
 
 export default function ClientDetailPage() {
@@ -35,6 +36,7 @@ export default function ClientDetailPage() {
   const { hasRole } = useAuth();
   const canManage = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
   const [editOpen, setEditOpen] = useState(false);
+  const [view, setView] = useState<"overview" | "invoices">("overview");
 
   const { data: client, loading, refetch } = useApi<Client>(id ? `/clients/${id}` : null);
   const [month] = useMonth();
@@ -109,76 +111,95 @@ export default function ClientDetailPage() {
           </div>
         </motion.div>
 
-        <motion.div variants={fadeUp}>
+        {/* Sections: overview of the client, and its invoices */}
+        <motion.div variants={fadeUp} className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <Tabs
+            tabs={[
+              { key: "overview", label: "Overview" },
+              { key: "invoices", label: "Invoices", badge: rows.length || undefined },
+            ]}
+            active={view}
+            onChange={setView}
+            layoutId="client-view"
+            label="Client sections"
+          />
           <MonthFilter />
         </motion.div>
 
-        {/* Taxation + receivables KPIs */}
-        <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard label="Total billed" value={formatINR(totalBilled)} sub={`${rows.length} invoices`} spark={rows.map((i) => i.total_amount).slice(-9)} />
-          <MetricCard label="Received" value={formatINR(received)} sub="Settled to date" spark={rows.map((i) => i.amount_received).slice(-9)} />
-          <MetricCard label="Outstanding" value={formatINR(pending)} sub="Pending collection" spark={rows.map((i) => i.amount_pending).slice(-9)} />
-          <MetricCard label="GST charged" value={formatINR(gst)} sub={`TDS receivable ${formatINR(tds)}`} spark={rows.map((i) => i.gst_amount).slice(-9)} />
-        </motion.div>
+        {view === "overview" ? (
+          <>
+            {/* Taxation + receivables KPIs */}
+            <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard label="Total billed" value={formatINR(totalBilled)} sub={`${rows.length} invoices`} spark={rows.map((i) => i.total_amount).slice(-9)} />
+              <MetricCard label="Received" value={formatINR(received)} sub="Settled to date" spark={rows.map((i) => i.amount_received).slice(-9)} />
+              <MetricCard label="Outstanding" value={formatINR(pending)} sub="Pending collection" spark={rows.map((i) => i.amount_pending).slice(-9)} />
+              <MetricCard label="GST charged" value={formatINR(gst)} sub={`TDS receivable ${formatINR(tds)}`} spark={rows.map((i) => i.gst_amount).slice(-9)} />
+            </motion.div>
 
-        {/* Profile details */}
-        <motion.div variants={fadeUp}>
-          <Panel>
-            <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Onboarding details</h2>
-            <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
-              <DataField label="GST number" value={client?.gst_number} mono />
-              <DataField label="Certificate of incorporation" value={client?.coi} mono />
-              <DataField
-                label="MSME"
-                value={client ? (client.msme ? `Yes${client.msme_number ? ` · ${client.msme_number}` : ""}` : "No") : null}
-                mono={!!client?.msme_number}
-              />
-              {client?.legal_name && <DataField label="Registered legal name" value={client.legal_name} />}
-              <DataField
-                label="Referral agent"
-                value={
-                  agent
-                    ? agent.is_house || !agentDetail
-                      ? agentLabel(agent)
-                      : `${agent.business_name} · ${agentDetail.commission_rate}%`
-                    : null
-                }
-              />
-              <DataField label="Onboarded" value={client ? formatDate(client.created_at) : null} />
-              <DataField label="Address" value={client?.billing_address} className="sm:col-span-2 lg:col-span-1" />
-              {client?.notes && <DataField label="Notes" value={client.notes} className="sm:col-span-2 lg:col-span-3" />}
-            </div>
-          </Panel>
-        </motion.div>
-
-        {/* Invoices */}
-        <motion.div variants={fadeUp} className="flex flex-col gap-4">
-          <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Invoices</h2>
-          {rows.length > 0 ? (
-            <Table head={["Invoice", "Date", "Total", "Pending", "Status", ""]}>
-              {rows.map((inv) => (
-                <Row key={inv.id} onClick={() => router.push(`/portal/invoices/${inv.id}`)}>
-                  <Cell className="font-medium">{inv.display_number}</Cell>
-                  <Cell className="text-ink-40">{formatDate(documentDate(inv))}</Cell>
-                  <Cell className="tabular-nums">{formatINR(inv.total_amount)}</Cell>
-                  <Cell className="tabular-nums text-ink-40">{formatINR(inv.amount_pending)}</Cell>
-                  <Cell>
-                    <StatusPill status={inv.status} />
-                  </Cell>
-                  <Cell>
-                    {inv.is_locked && (
-                      <span className="inline-flex items-center gap-1 text-xs text-ink-40">
-                        <Lock className="h-3 w-3" /> Locked
-                      </span>
-                    )}
-                  </Cell>
-                </Row>
-              ))}
-            </Table>
-          ) : (
-            <Empty message="No invoices for this client yet." />
-          )}
-        </motion.div>
+            {/* Profile details */}
+            <motion.div variants={fadeUp}>
+              <Panel>
+                <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Onboarding details</h2>
+                <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
+                  <DataField label="GST number" value={client?.gst_number} mono />
+                  <DataField label="Certificate of incorporation" value={client?.coi} mono />
+                  <DataField
+                    label="MSME"
+                    value={client ? (client.msme ? `Yes${client.msme_number ? ` · ${client.msme_number}` : ""}` : "No") : null}
+                    mono={!!client?.msme_number}
+                  />
+                  {client?.legal_name && <DataField label="Registered legal name" value={client.legal_name} />}
+                  <DataField
+                    label="Referral agent"
+                    value={
+                      agent
+                        ? agent.is_house || !agentDetail
+                          ? agentLabel(agent)
+                          : `${agent.business_name} · ${agentDetail.commission_rate}%`
+                        : null
+                    }
+                  />
+                  <DataField label="Onboarded" value={client ? formatDate(client.created_at) : null} />
+                  <DataField label="Address" value={client?.billing_address} className="sm:col-span-2 lg:col-span-1" />
+                  {client?.notes && <DataField label="Notes" value={client.notes} className="sm:col-span-2 lg:col-span-3" />}
+                </div>
+              </Panel>
+            </motion.div>
+          </>
+        ) : (
+          <motion.div variants={fadeUp} className="flex flex-col gap-4">
+            {rows.length > 0 ? (
+              <Table head={["Invoice", "Type", "Date", "Total", "Pending", "Status", ""]}>
+                {rows.map((inv) => (
+                  <Row key={inv.id} onClick={() => router.push(`/portal/invoices/${inv.id}`)}>
+                    <Cell className="font-medium">
+                      {inv.display_number}
+                      {inv.is_issued && inv.proforma_number && (
+                        <span className="block text-xs font-light text-ink-40">from {inv.proforma_number}</span>
+                      )}
+                    </Cell>
+                    <Cell className="text-secondary">{documentKind(inv)}</Cell>
+                    <Cell className="text-ink-40">{formatDate(documentDate(inv))}</Cell>
+                    <Cell className="tabular-nums">{formatINR(inv.total_amount)}</Cell>
+                    <Cell className="tabular-nums text-ink-40">{inv.is_issued ? formatINR(inv.amount_pending) : "Not due"}</Cell>
+                    <Cell>
+                      <StatusPill status={inv.status} />
+                    </Cell>
+                    <Cell>
+                      {inv.is_locked && (
+                        <span className="inline-flex items-center gap-1 text-xs text-ink-40">
+                          <Lock className="h-3 w-3" /> Locked
+                        </span>
+                      )}
+                    </Cell>
+                  </Row>
+                ))}
+              </Table>
+            ) : (
+              <Empty message="No invoices for this client in this period." />
+            )}
+          </motion.div>
+        )}
       </motion.div>
 
       {client && (

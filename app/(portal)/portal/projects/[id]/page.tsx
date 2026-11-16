@@ -9,11 +9,15 @@ import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { ProjectForm } from "@/components/portal/projects/ProjectForm";
 import { ProjectVendorsForm } from "@/components/portal/projects/ProjectVendorsForm";
 import { AssignVendorForm } from "@/components/portal/projects/AssignVendorForm";
+import { Tabs } from "@/components/portal/Tabs";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatINR } from "@/lib/utils";
 import { api, ApiError, type ProjectDetail, type ProjectVendor, type WorkOrderSent } from "@/lib/api";
+
+type ProjectTab = "overview" | "client" | "vendors" | "margin";
+const PROJECT_TABS: ProjectTab[] = ["overview", "client", "vendors", "margin"];
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -26,11 +30,33 @@ export default function ProjectDetailPage() {
   const [assigning, setAssigning] = useState(
     () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("assign") === "1",
   );
-  // Drop ?assign=1 so a refresh does not open the dialog again.
+  // The open section lives in ?tab= so a refresh or shared link lands on the same one.
+  // A new project opening the assign dialog starts on Vendors.
+  const [tab, setTab] = useState<ProjectTab>(() => {
+    if (typeof window === "undefined") return "overview";
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab") as ProjectTab | null;
+    if (t && PROJECT_TABS.includes(t)) return t;
+    return params.get("assign") === "1" ? "vendors" : "overview";
+  });
+  function writeTabToUrl(next: ProjectTab, params: URLSearchParams) {
+    if (next === "overview") params.delete("tab");
+    else params.set("tab", next);
+    const qs = params.toString();
+    window.history.replaceState(window.history.state, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }
+  function changeTab(next: ProjectTab) {
+    setTab(next);
+    writeTabToUrl(next, new URLSearchParams(window.location.search));
+  }
+  // Drop ?assign=1 so a refresh does not open the dialog again (keeping ?tab=).
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).has("assign")) {
-      window.history.replaceState(window.history.state, "", window.location.pathname);
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("assign")) {
+      params.delete("assign");
+      writeTabToUrl(tab, params);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -93,6 +119,40 @@ export default function ProjectDetailPage() {
   }
 
   const usedPercent = project && project.budget > 0 ? Math.round((project.committed_cost / project.budget) * 100) : 0;
+  const negativeMargins = project?.service_margins.filter((m) => m.margin < 0).length ?? 0;
+
+  const contractValueCard = (
+    <MetricCard
+      label="Contract value"
+      value={project?.contract_value ? formatINR(project.contract_value) : "Not set"}
+      sub="Agreed with the client, before GST"
+    />
+  );
+  const billedCard = <MetricCard label="Billed" value={formatINR(project?.billed ?? 0)} sub="Invoices raised, before GST" />;
+  const leftToBillCard = (
+    <MetricCard
+      label="Left to bill"
+      value={project?.left_to_bill != null ? formatINR(project.left_to_bill) : "-"}
+      sub={
+        project?.over_contract
+          ? `⚠ billed ${formatINR((project.billed ?? 0) - project.contract_value)} over the contract`
+          : project?.left_to_bill != null
+            ? "Still to invoice"
+            : "Set a contract value to track this"
+      }
+    />
+  );
+  const marginCard = <MetricCard label="Margin" value={formatINR(project?.margin ?? 0)} sub="Billed minus vendor invoices" />;
+  const invoicedByVendorsCard = (
+    <MetricCard label="Invoiced by vendors" value={formatINR(project?.invoiced_cost ?? 0)} sub="Before GST" />
+  );
+  const budgetLeftCard = (
+    <MetricCard
+      label="Budget left"
+      value={formatINR(project?.remaining_budget ?? 0)}
+      sub={`${project?.vendors.length ?? 0} vendor${project?.vendors.length === 1 ? "" : "s"} assigned`}
+    />
+  );
 
   return (
     <PortalShell>
@@ -139,215 +199,237 @@ export default function ProjectDetailPage() {
           </p>
         )}
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard
-            label="Contract value"
-            value={project?.contract_value ? formatINR(project.contract_value) : "Not set"}
-            sub="Agreed with the client, before GST"
-          />
-          <MetricCard label="Billed" value={formatINR(project?.billed ?? 0)} sub="Invoices raised, before GST" />
-          <MetricCard
-            label="Left to bill"
-            value={project?.left_to_bill != null ? formatINR(project.left_to_bill) : "-"}
-            sub={
-              project?.over_contract
-                ? `⚠ billed ${formatINR((project.billed ?? 0) - project.contract_value)} over the contract`
-                : project?.left_to_bill != null
-                  ? "Still to invoice"
-                  : "Set a contract value to track this"
-            }
-          />
-          <MetricCard label="Margin" value={formatINR(project?.margin ?? 0)} sub="Billed minus vendor invoices" />
-        </div>
+        <Tabs
+          tabs={[
+            { key: "overview", label: "Overview" },
+            { key: "client", label: "Client", badge: project?.client_invoices.length || undefined },
+            { key: "vendors", label: "Vendors", badge: project?.vendors.length || undefined },
+            { key: "margin", label: "Margin by service", badge: negativeMargins || undefined, badgeTone: negativeMargins ? "danger" : undefined },
+          ]}
+          active={tab}
+          onChange={changeTab}
+          layoutId="project-tab"
+          label="Project sections"
+        />
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard label="Vendor budget" value={formatINR(project?.budget ?? 0)} sub="Planned vendor spend" />
-          <MetricCard
-            label="Committed to vendors"
-            value={formatINR(project?.committed_cost ?? 0)}
-            sub={project?.over_budget ? `⚠ ${usedPercent}% of budget: over` : `${usedPercent}% of budget`}
-          />
-          <MetricCard label="Invoiced by vendors" value={formatINR(project?.invoiced_cost ?? 0)} sub="Before GST" />
-          <MetricCard
-            label="Budget left"
-            value={formatINR(project?.remaining_budget ?? 0)}
-            sub={`${project?.vendors.length ?? 0} vendor${project?.vendors.length === 1 ? "" : "s"} assigned`}
-          />
-        </div>
-
-        <Panel>
-          <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
-            <DataField label="Client" value={project?.client_name} />
-            <DataField
-              label={project && project.services.length > 1 ? "Services billed" : "Service billed"}
-              value={
-                project && project.services.length > 0 ? (
-                  <ul className="flex flex-col gap-1">
-                    {project.services.map((s) => (
-                      <li key={s.id}>
-                        {s.title}
-                        <span className="ml-1.5 font-mono text-xs text-ink-40">SAC {s.sac_code ?? "-"}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : project ? (
-                  <span className="text-warning">⚠ Not set: choose one with Edit before invoicing</span>
-                ) : null
-              }
-            />
-            <DataField label="Start month" value={project?.start_date ? monthLabel(project.start_date) : null} />
-            <DataField label="Report due" value={project?.expected_report_date ? formatDate(project.expected_report_date) : null} />
-            <DataField
-              label="Scope of work"
-              value={project?.description ? <span className="whitespace-pre-wrap">{project.description}</span> : null}
-              className="col-span-full"
-            />
-          </div>
-        </Panel>
-
-        <section className="flex flex-col gap-4" aria-label="Client invoices">
-          <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Client invoices for this project</h2>
-          {project && project.client_invoices.length > 0 ? (
-            <Table head={["Invoice", "Date", "Taxable value", "Total", "Status"]}>
-              {project.client_invoices.map((i) => (
-                <Row key={i.id} onClick={() => router.push(`/portal/invoices/${i.id}`)}>
-                  <Cell className="font-medium">{i.display_number}</Cell>
-                  <Cell className="text-ink-40">
-                    {(i.invoice_date ?? i.proforma_date) ? formatDate((i.invoice_date ?? i.proforma_date) as string) : "-"}
-                  </Cell>
-                  <Cell className="tabular-nums">{formatINR(i.taxable_value)}</Cell>
-                  <Cell className="tabular-nums">{formatINR(i.total_amount)}</Cell>
-                  <Cell>
-                    <StatusPill status={i.status} />
-                  </Cell>
-                </Row>
-              ))}
-            </Table>
-          ) : (
-            <Empty message={loading ? "Loading…" : "No client invoices yet. Raise one from Invoices and pick this project."} />
-          )}
-        </section>
-
-        <section className="flex flex-col gap-4" aria-label="Vendors">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendors and work orders</h2>
-            {canManage && project && (
-              <div className="flex gap-2">
-                <Button size="sm" variant="secondary" magnetic={false} onClick={() => setVendorsOpen(true)}>
-                  <FileText className="h-4 w-4" /> Scope &amp; budget
-                </Button>
-                <Button size="sm" magnetic={false} onClick={() => setAssigning(true)}>
-                  <Plus className="h-4 w-4" /> Assign vendors
-                </Button>
-              </div>
-            )}
-          </div>
-          {project && project.vendors.length > 0 ? (
-            <Table head={["Vendor", "Services and UPS codes", "Agreed cost", "Invoiced", "Work order", ...(canManage ? [""] : [])]}>
-              {project.vendors.map((v) => (
-                <Row key={v.id}>
-                  <Cell className="font-medium">
-                    {v.vendor_name}
-                    <span className="block text-xs font-light text-ink-40">{v.vendor_email}</span>
-                  </Cell>
-                  <Cell className="whitespace-normal">
-                    {v.services.length > 0 ? (
-                      <ul className="flex flex-col gap-1.5">
-                        {v.services.map((s) => (
-                          <li key={s.id} className="leading-tight">
-                            <span className="font-mono text-xs font-medium">{s.code}</span>
-                            <span className="block text-xs text-secondary">
-                              {s.service_title} · {formatINR(s.agreed_cost)}
-                              {s.invoiced > 0 && <> · billed {formatINR(s.invoiced)}</>}
-                              {s.over_invoiced && <span className="font-medium text-danger"> · over</span>}
+        {tab === "overview" && (
+          <>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {contractValueCard}
+              {billedCard}
+              {marginCard}
+              {budgetLeftCard}
+            </div>
+            <Panel>
+              <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+                <DataField label="Client" value={project?.client_name} />
+                <DataField
+                  label={project && project.services.length > 1 ? "Services billed" : "Service billed"}
+                  value={
+                    project && project.services.length > 0 ? (
+                      <ul className="flex flex-col gap-2.5">
+                        {project.services.map((s) => (
+                          <li key={s.id} className="leading-snug">
+                            <span className="block">{s.title}</span>
+                            {/* The SAC on its own line, as a readable label, rather than faint text after a wrapped title. */}
+                            <span className="mt-1 inline-flex items-center rounded-md border border-line bg-mist/60 px-1.5 py-0.5 font-mono text-[11px] text-secondary">
+                              SAC {s.sac_code ?? "—"}
                             </span>
                           </li>
                         ))}
                       </ul>
-                    ) : (
-                      <span className="text-xs text-warning">No services yet: use Edit to assign them</span>
-                    )}
-                  </Cell>
-                  <Cell className="tabular-nums">{formatINR(v.agreed_cost)}</Cell>
-                  <Cell className="tabular-nums">
-                    {formatINR(v.invoiced)}
-                    {v.over_invoiced && <span className="block text-xs font-medium text-danger">⚠ above agreed cost</span>}
-                  </Cell>
-                  <Cell>
-                    <WorkOrderState vendor={v} />
-                  </Cell>
-                  {canManage && (
-                    <Cell>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant="secondary" magnetic={false} onClick={() => download(v)} disabled={busy !== null}>
-                          <Download className="h-4 w-4" /> PDF
-                        </Button>
-                        <Button size="sm" magnetic={false} onClick={() => email(v)} disabled={busy !== null}>
-                          <Mail className="h-4 w-4" /> {busy === `email-${v.vendor_id}` ? "Sending…" : v.work_order_sent_at ? "Re-send" : "Email"}
-                        </Button>
-                        <Button size="sm" variant="secondary" magnetic={false} onClick={() => setAssigning(true)} disabled={busy !== null} aria-label={`Edit ${v.vendor_name}'s services`}>
-                          <Pencil className="h-4 w-4" /> Edit
-                        </Button>
-                        <button
-                          type="button"
-                          onClick={() => unassign(v)}
-                          disabled={busy !== null}
-                          title={v.invoiced > 0 ? "Already invoiced: cannot be removed" : "Remove from project"}
-                          aria-label={`Remove ${v.vendor_name} from the project`}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-ink-40 transition-colors hover:bg-mist hover:text-foreground disabled:opacity-40"
-                        >
-                          <X className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </Cell>
-                  )}
-                </Row>
-              ))}
-            </Table>
-          ) : (
-            <Empty message={loading ? "Loading…" : "No vendors on this project yet. Use Assign vendors to map a vendor to each service."} />
-          )}
-        </section>
-
-        {project && project.service_margins.length > 0 && (
-          <section className="flex flex-col gap-4" aria-label="Margin by service">
-            <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Margin by service</h2>
-            <Table head={["Service", "Billed to client", "Agreed with vendors", "Invoiced by vendors", "Margin"]}>
-              {project.service_margins.map((m) => (
-                <Row key={m.service_id}>
-                  <Cell className="font-medium">{m.service_title}</Cell>
-                  <Cell className="tabular-nums">{formatINR(m.billed)}</Cell>
-                  <Cell className="tabular-nums text-secondary">{formatINR(m.vendor_committed)}</Cell>
-                  <Cell className="tabular-nums text-secondary">{formatINR(m.vendor_invoiced)}</Cell>
-                  <Cell className={"tabular-nums font-medium " + (m.margin < 0 ? "text-danger" : "")}>{formatINR(m.margin)}</Cell>
-                </Row>
-              ))}
-            </Table>
-            <p className="text-xs text-ink-40">Before GST. Margin = billed to the client minus what vendors have invoiced for that service.</p>
-          </section>
+                    ) : project ? (
+                      <span className="text-warning">⚠ Not set: choose one with Edit before invoicing</span>
+                    ) : null
+                  }
+                />
+                <DataField label="Start month" value={project?.start_date ? monthLabel(project.start_date) : null} />
+                <DataField label="Report due" value={project?.expected_report_date ? formatDate(project.expected_report_date) : null} />
+                <DataField
+                  label="Scope of work"
+                  value={project?.description ? <span className="whitespace-pre-wrap">{project.description}</span> : null}
+                  className="col-span-full"
+                />
+              </div>
+            </Panel>
+          </>
         )}
 
-        <section className="flex flex-col gap-4" aria-label="Vendor invoices">
-          <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendor invoices for this project</h2>
-          {project && project.vendor_invoices.length > 0 ? (
-            <Table head={["Invoice", "Vendor", "Date", "Amount", "Net payable", "Status"]}>
-              {project.vendor_invoices.map((i) => (
-                <Row key={i.id}>
-                  <Cell className="font-medium">{i.invoice_number}</Cell>
-                  <Cell className="text-ink-40">{i.vendor_name}</Cell>
-                  <Cell className="text-ink-40">{formatDate(i.invoice_date)}</Cell>
-                  <Cell className="tabular-nums">{formatINR(i.invoice_amount)}</Cell>
-                  <Cell className="tabular-nums">{formatINR(i.net_payable)}</Cell>
-                  <Cell>
-                    <StatusPill status={i.status} />
-                  </Cell>
-                </Row>
-              ))}
-            </Table>
-          ) : (
-            <Empty message="No vendor invoices yet. Record them from Invoices > Vendor Invoice against this project's UPS codes." />
-          )}
-        </section>
+        {tab === "client" && (
+          <>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+              {contractValueCard}
+              {billedCard}
+              {leftToBillCard}
+            </div>
+            <section className="flex flex-col gap-4" aria-label="Client invoices">
+              <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Client invoices for this project</h2>
+              {project && project.client_invoices.length > 0 ? (
+                <Table head={["Invoice", "Date", "Taxable value", "Total", "Status"]}>
+                  {project.client_invoices.map((i) => (
+                    <Row key={i.id} onClick={() => router.push(`/portal/invoices/${i.id}`)}>
+                      <Cell className="font-medium">{i.display_number}</Cell>
+                      <Cell className="text-ink-40">
+                        {(i.invoice_date ?? i.proforma_date) ? formatDate((i.invoice_date ?? i.proforma_date) as string) : "-"}
+                      </Cell>
+                      <Cell className="tabular-nums">{formatINR(i.taxable_value)}</Cell>
+                      <Cell className="tabular-nums">{formatINR(i.total_amount)}</Cell>
+                      <Cell>
+                        <StatusPill status={i.status} />
+                      </Cell>
+                    </Row>
+                  ))}
+                </Table>
+              ) : (
+                <Empty message={loading ? "Loading…" : "No client invoices yet. Raise one from Invoices and pick this project."} />
+              )}
+            </section>
+          </>
+        )}
+
+        {tab === "vendors" && (
+          <>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              <MetricCard label="Vendor budget" value={formatINR(project?.budget ?? 0)} sub="Planned vendor spend" />
+              <MetricCard
+                label="Committed to vendors"
+                value={formatINR(project?.committed_cost ?? 0)}
+                sub={project?.over_budget ? `⚠ ${usedPercent}% of budget: over` : `${usedPercent}% of budget`}
+              />
+              {invoicedByVendorsCard}
+              {budgetLeftCard}
+            </div>
+            <section className="flex flex-col gap-4" aria-label="Vendors">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendors and work orders</h2>
+                {canManage && project && (
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" magnetic={false} onClick={() => setVendorsOpen(true)}>
+                      <FileText className="h-4 w-4" /> Scope &amp; budget
+                    </Button>
+                    <Button size="sm" magnetic={false} onClick={() => setAssigning(true)}>
+                      <Plus className="h-4 w-4" /> Assign vendors
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {project && project.vendors.length > 0 ? (
+                <Table head={["Vendor", "Services and UPS codes", "Agreed cost", "Invoiced", "Work order", ...(canManage ? [""] : [])]}>
+                  {project.vendors.map((v) => (
+                    <Row key={v.id}>
+                      <Cell className="font-medium">
+                        {v.vendor_name}
+                        <span className="block text-xs font-light text-ink-40">{v.vendor_email}</span>
+                      </Cell>
+                      <Cell className="whitespace-normal">
+                        {v.services.length > 0 ? (
+                          <ul className="flex flex-col gap-1.5">
+                            {v.services.map((s) => (
+                              <li key={s.id} className="leading-tight">
+                                <span className="font-mono text-xs font-medium">{s.code}</span>
+                                <span className="block text-xs text-secondary">
+                                  {s.service_title} · {formatINR(s.agreed_cost)}
+                                  {s.invoiced > 0 && <> · billed {formatINR(s.invoiced)}</>}
+                                  {s.over_invoiced && <span className="font-medium text-danger"> · over</span>}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-xs text-warning">No services yet: use Edit to assign them</span>
+                        )}
+                      </Cell>
+                      <Cell className="tabular-nums">{formatINR(v.agreed_cost)}</Cell>
+                      <Cell className="tabular-nums">
+                        {formatINR(v.invoiced)}
+                        {v.over_invoiced && <span className="block text-xs font-medium text-danger">⚠ above agreed cost</span>}
+                      </Cell>
+                      <Cell>
+                        <WorkOrderState vendor={v} />
+                      </Cell>
+                      {canManage && (
+                        <Cell>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="secondary" magnetic={false} onClick={() => download(v)} disabled={busy !== null}>
+                              <Download className="h-4 w-4" /> PDF
+                            </Button>
+                            <Button size="sm" magnetic={false} onClick={() => email(v)} disabled={busy !== null}>
+                              <Mail className="h-4 w-4" /> {busy === `email-${v.vendor_id}` ? "Sending…" : v.work_order_sent_at ? "Re-send" : "Email"}
+                            </Button>
+                            <Button size="sm" variant="secondary" magnetic={false} onClick={() => setAssigning(true)} disabled={busy !== null} aria-label={`Edit ${v.vendor_name}'s services`}>
+                              <Pencil className="h-4 w-4" /> Edit
+                            </Button>
+                            <button
+                              type="button"
+                              onClick={() => unassign(v)}
+                              disabled={busy !== null}
+                              title={v.invoiced > 0 ? "Already invoiced: cannot be removed" : "Remove from project"}
+                              aria-label={`Remove ${v.vendor_name} from the project`}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-ink-40 transition-colors hover:bg-mist hover:text-foreground disabled:opacity-40"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </Cell>
+                      )}
+                    </Row>
+                  ))}
+                </Table>
+              ) : (
+                <Empty message={loading ? "Loading…" : "No vendors on this project yet. Use Assign vendors to map a vendor to each service."} />
+              )}
+            </section>
+            <section className="flex flex-col gap-4" aria-label="Vendor invoices">
+              <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendor invoices for this project</h2>
+              {project && project.vendor_invoices.length > 0 ? (
+                <Table head={["Invoice", "Vendor", "Date", "Amount", "Net payable", "Status"]}>
+                  {project.vendor_invoices.map((i) => (
+                    <Row key={i.id}>
+                      <Cell className="font-medium">{i.invoice_number}</Cell>
+                      <Cell className="text-ink-40">{i.vendor_name}</Cell>
+                      <Cell className="text-ink-40">{formatDate(i.invoice_date)}</Cell>
+                      <Cell className="tabular-nums">{formatINR(i.invoice_amount)}</Cell>
+                      <Cell className="tabular-nums">{formatINR(i.net_payable)}</Cell>
+                      <Cell>
+                        <StatusPill status={i.status} />
+                      </Cell>
+                    </Row>
+                  ))}
+                </Table>
+              ) : (
+                <Empty message="No vendor invoices yet. Record them from Invoices > Vendor Invoice against this project's UPS codes." />
+              )}
+            </section>
+          </>
+        )}
+
+        {tab === "margin" && (
+          <>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+              {billedCard}
+              {invoicedByVendorsCard}
+              {marginCard}
+            </div>
+            <section className="flex flex-col gap-4" aria-label="Margin by service">
+              {project && project.service_margins.length > 0 ? (
+              <Table head={["Service", "Billed to client", "Agreed with vendors", "Invoiced by vendors", "Margin"]}>
+                {project.service_margins.map((m) => (
+                  <Row key={m.service_id}>
+                    <Cell className="font-medium">{m.service_title}</Cell>
+                    <Cell className="tabular-nums">{formatINR(m.billed)}</Cell>
+                    <Cell className="tabular-nums text-secondary">{formatINR(m.vendor_committed)}</Cell>
+                    <Cell className="tabular-nums text-secondary">{formatINR(m.vendor_invoiced)}</Cell>
+                    <Cell className={"tabular-nums font-medium " + (m.margin < 0 ? "text-danger" : "")}>{formatINR(m.margin)}</Cell>
+                  </Row>
+                ))}
+              </Table>
+              ) : (
+                <Empty message={loading ? "Loading…" : "No services on this project yet. Add one with Edit to see margin by service."} />
+              )}
+              <p className="text-xs text-ink-40">Before GST. Margin = billed to the client minus what vendors have invoiced for that service.</p>
+            </section>
+          </>
+        )}
       </div>
 
       {editOpen && project && (

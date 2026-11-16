@@ -105,6 +105,11 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
     .map((a) => ({ assignment: a, amount: Number(amounts[a.id] || 0) }))
     .filter((l) => l.amount > 0);
   const amount = +lines.reduce((s, l) => s + l.amount, 0).toFixed(2);
+  // Codes this bill takes past their agreed cost: shown per row and summed above Save.
+  const overruns = lines
+    .filter((l) => l.amount > Math.max(l.assignment.remaining, 0))
+    .map((l) => ({ code: l.assignment.code, over: +(l.amount - Math.max(l.assignment.remaining, 0)).toFixed(2) }));
+  const overTotal = +overruns.reduce((s, o) => s + o.over, 0).toFixed(2);
 
   // Same arithmetic as the server, so the preview matches what gets saved.
   const tdsRate = TDS_SECTIONS.find((t) => t.key === section)?.rate ?? 0;
@@ -193,7 +198,7 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
             <thead>
               <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
                 <th className="px-4 py-3 font-medium">UPS code</th>
-                <th className="px-4 py-3 font-medium">Agreed / left</th>
+                <th className="px-4 py-3 font-medium">Agreed cost · left to bill</th>
                 <th className="w-52 px-4 py-3 font-medium">Billed now (₹, before GST)</th>
               </tr>
             </thead>
@@ -201,14 +206,20 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
               {codes.map((a) => {
                 const now = Number(amounts[a.id] || 0);
                 const over = now > 0 && now > a.remaining;
+                const left = Math.max(a.remaining, 0);
                 return (
-                  <tr key={a.id} className="border-b border-line/60 last:border-0">
+                  <tr key={a.id} className="border-b border-line/60 align-top last:border-0">
                     <td className="px-4 py-2">
                       <span className="font-mono text-xs font-medium">{a.code}</span>
                       <span className="block text-xs text-secondary">{a.service_title}</span>
                     </td>
-                    <td className="px-4 py-2 tabular-nums text-secondary">
-                      {formatINR(a.agreed_cost)} / <span className={a.remaining < 0 ? "text-danger" : ""}>{formatINR(a.remaining)}</span>
+                    <td className="px-4 py-2 tabular-nums">
+                      <span className="block text-secondary">Agreed {formatINR(a.agreed_cost)}</span>
+                      <span className={"block text-xs " + (a.remaining <= 0 ? "text-danger" : "text-ink-40")}>
+                        {a.remaining < 0
+                          ? `Already ${formatINR(-a.remaining)} over`
+                          : `${formatINR(left)} left${a.invoiced > 0 ? ` (${formatINR(a.invoiced)} billed)` : ""}`}
+                      </span>
                     </td>
                     <td className="px-4 py-2">
                       <input
@@ -218,7 +229,11 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
                         aria-label={`Amount billed against ${a.code}`}
                         className={inputClass + (over ? " border-warning" : "")}
                       />
-                      {over && <span className="mt-1 block text-xs text-warning">Above what is left on this code</span>}
+                      {over && (
+                        <span className="mt-1 block text-xs leading-snug text-warning">
+                          {formatINR(now - left)} over the agreed cost. Only {formatINR(left)} is left to bill on this code.
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -295,10 +310,25 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
         </div>
       </div>
 
+      {overruns.length > 0 && (
+        <div role="status" className="rounded-2xl border border-warning-line bg-warning-soft p-4 text-sm sm:col-span-3">
+          <p className="font-medium text-warning">
+            This invoice is {formatINR(overTotal)} over the agreed cost on {overruns.length} UPS code{overruns.length === 1 ? "" : "s"}
+            {" "}({overruns.map((o) => o.code).join(", ")}).
+          </p>
+          <p className="mt-1 text-secondary">
+            You can still save it. {overruns.length === 1 ? "That code" : "Those codes"} will show as <span className="font-medium">Over-invoiced</span> on the
+            project and in the vendor&apos;s jobs. If the price with the vendor was raised, update the agreed cost first (Project → Assign vendors).
+            Otherwise, check the amount with the vendor.
+          </p>
+        </div>
+      )}
       {error && <p className="sm:col-span-3 text-sm text-danger">⚠ {error}</p>}
       <div className="sm:col-span-3 flex justify-end gap-3 pt-1">
         <Button type="button" variant="secondary" magnetic={false} onClick={onCancel}>Cancel</Button>
-        <Button type="submit" magnetic={false} disabled={saving || lines.length === 0}>{saving ? "Saving…" : "Save invoice"}</Button>
+        <Button type="submit" magnetic={false} disabled={saving || lines.length === 0}>
+          {saving ? "Saving…" : overruns.length ? "Save anyway" : "Save invoice"}
+        </Button>
       </div>
     </form>
   );

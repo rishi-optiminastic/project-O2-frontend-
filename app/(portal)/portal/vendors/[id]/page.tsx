@@ -51,6 +51,7 @@ export default function VendorDetailPage() {
   const [servicesOpen, setServicesOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
   const [view, setView] = useState<"jobs" | "invoices">("jobs");
+  const [section, setSection] = useState<"overview" | "services" | "bank" | "work">("overview");
   // A bill recorded from the floating Record button updates the jobs and invoices here.
   usePortalEvent(PORTAL_EVENTS.vendorInvoiceRecorded, refetchInvoices);
   usePortalEvent(PORTAL_EVENTS.vendorInvoiceRecorded, refetchAssignments);
@@ -146,6 +147,24 @@ export default function VendorDetailPage() {
 
         {err && <p className="text-sm text-danger">⚠ {err}</p>}
 
+        {/* Sections of the vendor */}
+        <motion.div variants={fadeUp}>
+          <Tabs
+            tabs={[
+              { key: "overview", label: "Overview" },
+              { key: "services", label: "Services provided", badge: vendor?.services.length || undefined },
+              { key: "bank", label: "Bank accounts", badge: vendor?.bank_accounts.length || undefined },
+              { key: "work", label: "Jobs & invoices", badge: assignments.length || undefined },
+            ]}
+            active={section}
+            onChange={setSection}
+            layoutId="vendor-section"
+            label="Vendor sections"
+          />
+        </motion.div>
+
+        {section === "overview" && (
+          <>
         {/* KPIs */}
         <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard label="Net payable" value={formatINR(payable)} sub={`${invoices.length} invoices`} spark={invoices.map((i) => i.net_payable).slice(-9)} />
@@ -166,55 +185,83 @@ export default function VendorDetailPage() {
             </div>
           </Panel>
         </motion.div>
+          </>
+        )}
 
-        {/* Services the vendor provides */}
-        <motion.div variants={fadeUp}>
-          <Panel>
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Services provided</h2>
-              {vendor && canManage && (
-                <Button size="sm" variant="secondary" magnetic={false} onClick={() => setServicesOpen(true)}>
-                  <Layers className="h-4 w-4" /> Edit services
-                </Button>
+        {section === "services" && (
+          <motion.div variants={fadeUp}>
+            <Panel>
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Services provided</h2>
+                {vendor && canManage && (
+                  <Button size="sm" variant="secondary" magnetic={false} onClick={() => setServicesOpen(true)}>
+                    <Layers className="h-4 w-4" /> Edit services
+                  </Button>
+                )}
+              </div>
+              {vendor && vendor.services.length > 0 ? (
+                <PanelTable head={["Service", "SAC code", "Jobs on projects", "Status"]}>
+                  {vendor.services.map((s) => {
+                    const jobs = assignments.filter((a) => a.service_id === s.id);
+                    return (
+                      <tr key={s.id} className="border-b border-line/60 last:border-0">
+                        <td className="px-4 py-3 font-medium">{s.title}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-secondary">{s.sac_code ?? "—"}</td>
+                        <td className="px-4 py-3 text-secondary">
+                          {jobs.length > 0 ? (
+                            <span title={jobs.map((j) => j.code).join(", ")}>
+                              {jobs.length} job{jobs.length === 1 ? "" : "s"} · {formatINR(jobs.reduce((t, j) => t + j.agreed_cost, 0))}
+                            </span>
+                          ) : (
+                            <span className="text-ink-40">None yet</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusPill status={s.is_active ? "Active" : "Inactive"} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </PanelTable>
+              ) : (
+                <p className="text-sm text-ink-40">
+                  {vendor ? "No services yet. Add the services this vendor provides so projects can assign them." : "…"}
+                </p>
               )}
-            </div>
-            {vendor && vendor.services.length > 0 ? (
-              <ul className="flex flex-wrap gap-2">
-                {vendor.services.map((s) => (
-                  <li key={s.id} className="rounded-full border border-line bg-white/60 px-3 py-1.5 text-sm">
-                    {s.title}
-                    <span className="ml-1.5 font-mono text-xs text-ink-40">{s.sac_code ?? ""}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-ink-40">
-                {vendor ? "No services yet. Add the services this vendor provides so projects can assign them." : "…"}
-              </p>
-            )}
-          </Panel>
-        </motion.div>
+            </Panel>
+          </motion.div>
+        )}
 
-        {/* Bank accounts */}
-        <motion.div variants={fadeUp} className="flex flex-col gap-4">
-          <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Bank accounts</h2>
-          {vendor && vendor.bank_accounts.length > 0 ? (
-            <Table head={["Bank", "Account holder", "Account number", "IFSC"]}>
-              {vendor.bank_accounts.map((a) => (
-                <Row key={a.id}>
-                  <Cell className="font-medium">{a.bank_name}</Cell>
-                  <Cell className="text-ink-40">{a.account_holder}</Cell>
-                  <Cell className="font-mono tabular-nums">{a.account_number}</Cell>
-                  <Cell className="font-mono text-ink-40">{a.ifsc_code}</Cell>
-                </Row>
-              ))}
-            </Table>
-          ) : (
-            <Empty message="No bank account yet. Add one with Edit before verifying this vendor." />
-          )}
-        </motion.div>
+        {section === "bank" && (
+          <motion.div variants={fadeUp}>
+            <Panel>
+              <div className="mb-5 flex items-center justify-between gap-3">
+                <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Bank accounts</h2>
+                {vendor && canManage && (
+                  <Button size="sm" variant="secondary" magnetic={false} onClick={() => setEditOpen(true)}>
+                    <Pencil className="h-4 w-4" /> Edit accounts
+                  </Button>
+                )}
+              </div>
+              {vendor && vendor.bank_accounts.length > 0 ? (
+                <PanelTable head={["Bank", "Account holder", "Account number", "IFSC"]}>
+                  {vendor.bank_accounts.map((a) => (
+                    <tr key={a.id} className="border-b border-line/60 last:border-0">
+                      <td className="px-4 py-3 font-medium">{a.bank_name}</td>
+                      <td className="px-4 py-3 text-secondary">{a.account_holder}</td>
+                      <td className="px-4 py-3 font-mono tabular-nums">{a.account_number}</td>
+                      <td className="px-4 py-3 font-mono text-xs text-secondary">{a.ifsc_code}</td>
+                    </tr>
+                  ))}
+                </PanelTable>
+              ) : (
+                <p className="text-sm text-ink-40">No bank account yet. Add one with Edit before verifying this vendor.</p>
+              )}
+            </Panel>
+          </motion.div>
+        )}
 
-        {/* Jobs (each UPS code the vendor is assigned) and the vendor's invoices */}
+        {section === "work" && (
         <motion.div variants={fadeUp} className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <Tabs
@@ -304,6 +351,7 @@ export default function VendorDetailPage() {
             <Empty message="No vendor invoices this month. Upload one and map it to the vendor's UPS codes." />
           )}
         </motion.div>
+        )}
       </motion.div>
 
       {vendor && (
@@ -384,5 +432,25 @@ function VendorEditForm({
         </ModalFooter>
       </form>
     </Modal>
+  );
+}
+
+/** A plain table for inside a Panel: the panel is the card, so the table adds only its rows. */
+function PanelTable({ head, children }: { head: string[]; children: React.ReactNode }) {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-line">
+      <table className="w-full min-w-[560px] text-left text-sm">
+        <thead>
+          <tr className="border-b border-line bg-mist/40 text-xs tracking-eyebrow text-ink-40">
+            {head.map((h) => (
+              <th key={h} className="px-4 py-3 font-medium">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
   );
 }

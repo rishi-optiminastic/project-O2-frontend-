@@ -91,7 +91,7 @@ export function VendorServicesForm({
                     />
                     <span className="min-w-0 flex-1">
                       <span className="text-sm font-medium">{s.title}</span>
-                      <span className="ml-1.5 font-mono text-xs text-ink-40">SAC {s.sac_code ?? "-"}</span>
+                      <span className="ml-2 rounded-md border border-line bg-mist/60 px-1.5 py-0.5 font-mono text-[11px] text-secondary">SAC {s.sac_code ?? "—"}</span>
                       {!s.is_active && <span className="ml-1.5 text-xs text-warning">Deactivated</span>}
                       {codes && (
                         <span className="block text-xs text-ink-40">
