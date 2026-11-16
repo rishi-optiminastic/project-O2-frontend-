@@ -17,7 +17,7 @@ type Stage =
   | { kind: "done"; result: ServiceBulkCreated };
 
 const TEMPLATE_HELP =
-  "One row per service: its title and, optionally, its SAC code. Titles must be new; a SAC already used by another service is allowed and pointed out.";
+  "One row per service: its title and, optionally, its SAC code. Titles and SAC codes must both be new: each SAC code belongs to one service only.";
 
 /** Add many catalogue services from one spreadsheet. Nothing is created until every row is correct. */
 export default function BulkServicesPage() {

@@ -83,7 +83,7 @@ export default function ServicesPage() {
   );
 }
 
-/** Titles of the other services that carry this SAC code. GST allows sharing; the form only points it out. */
+/** Titles of the other services that carry this SAC code. A SAC code belongs to one service only. */
 function sharedWith(services: Service[], sac: string | null, excludeId?: number): string[] {
   if (!sac) return [];
   return services.filter((s) => s.sac_code === sac && s.id !== excludeId).map((s) => s.title);
@@ -102,6 +102,10 @@ function ServiceForm({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [sac, setSac] = useState(service?.sac_code ?? "");
+  const sacCode = sac.replace(/\s/g, "");
+  // Editing a service that already shared its code (from before codes were unique) is allowed until the code changes.
+  const sacClash = sacCode && sacCode !== (service?.sac_code ?? "") ? sharedWith(services, sacCode, service?.id) : [];
 
   async function run(action: () => Promise<unknown>) {
     setSaving(true);
@@ -118,10 +122,8 @@ function ServiceForm({
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
-    const sac = String(fd.get("sac_code") ?? "").replace(/\s/g, "");
-    const body = { title: fd.get("title"), sac_code: sac || null };
-    const others = sharedWith(services, sac || null, service?.id);
-    if (others.length > 0 && !confirm(`SAC ${sac} is already used by ${others.join(", ")}. Save anyway?`)) return;
+    if (sacClash.length > 0) return; // explained under the SAC field
+    const body = { title: fd.get("title"), sac_code: sacCode || null };
     run(() => (service ? api.patch(`/services/${service.id}`, body) : api.post("/services", body)));
   }
 
@@ -137,10 +139,28 @@ function ServiceForm({
           <Field label="Title">
             <input name="title" required maxLength={200} defaultValue={service?.title} placeholder="Media buying" className={inputClass} />
           </Field>
+          <p className="mt-1.5 text-xs text-ink-40">Prints on the invoice as written. Each service needs its own title.</p>
         </div>
-        <Field label="SAC code">
-          <input name="sac_code" {...FIELD_RULES.sac} defaultValue={service?.sac_code ?? ""} placeholder="998366" className={inputClass} />
-        </Field>
+        <div>
+          <Field label="SAC code">
+            <input
+              name="sac_code"
+              {...FIELD_RULES.sac}
+              value={sac}
+              onChange={(e) => setSac(e.target.value)}
+              placeholder="998366"
+              aria-invalid={sacClash.length > 0}
+              className={inputClass + (sacClash.length > 0 ? " border-danger focus:border-danger" : "")}
+            />
+          </Field>
+          {sacClash.length > 0 ? (
+            <p role="alert" className="mt-1.5 text-xs text-danger">
+              SAC {sacCode} is already used by {sacClash.join(", ")}. Enter a different code.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-xs text-ink-40">4 to 8 digits. Each SAC code can be used by only one service.</p>
+          )}
+        </div>
 
         {error && <p role="alert" className="sm:col-span-3 text-sm text-danger">⚠ {error}</p>}
         <ModalFooter>
@@ -166,7 +186,7 @@ function ServiceForm({
               </Button>
             </>
           )}
-          <Button type="submit" magnetic={false} disabled={saving}>
+          <Button type="submit" magnetic={false} disabled={saving || sacClash.length > 0}>
             {saving ? "Saving…" : service ? "Save changes" : "Add service"}
           </Button>
         </ModalFooter>

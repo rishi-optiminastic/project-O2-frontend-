@@ -75,6 +75,11 @@ const STATUS_TONES: Record<string, Tone> = {
   "Mismatch Found": "danger",
   Accepted: "success",
   Revoked: "danger",
+  // A vendor job (UPS code) by how much of it is billed.
+  "Not invoiced": "neutral",
+  "Partly invoiced": "warning",
+  "Fully invoiced": "success",
+  "Over-invoiced": "danger",
 };
 
 export function statusTone(status: string): Tone {

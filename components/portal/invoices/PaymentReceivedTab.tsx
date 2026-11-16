@@ -13,8 +13,12 @@ import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
 /**
  * The "Receipts" tab: money coming in from clients and the TDS they
  * deducted, with the receipts ledger. GST and TDS registers live on Taxation.
+ *
+ * A payment is always recorded against a tax invoice. On the Proforma Invoice
+ * page the same receipts are listed by the proforma they settle.
  */
-export function PaymentReceivedTab() {
+export function PaymentReceivedTab({ kind = "tax" }: { kind?: "proforma" | "tax" }) {
+  const byProforma = kind === "proforma";
   const router = useRouter();
   const [month] = useMonth();
   const { data: summary, loading: summaryLoading, refetch: refetchSummary } = useApi<TaxationSummary>(withMonth("/taxation/summary", month));
@@ -43,13 +47,19 @@ export function PaymentReceivedTab() {
 
       {/* Receipts ledger */}
       <div>
-        <h2 className="mb-4 text-lg font-light tracking-tight">Receipts</h2>
+        <h2 className="mb-1 text-lg font-light tracking-tight">{byProforma ? "Receipts against proformas" : "Receipts"}</h2>
+        <p className="mb-4 text-sm font-light text-secondary">
+          {byProforma
+            ? "Payment is recorded on the tax invoice issued from each proforma."
+            : "Payments received against tax invoices, by payment date."}
+        </p>
         {receipts && receipts.length > 0 ? (
-          <Table head={["Date", "Invoice", "Amount", "TDS deducted", "GST", "Bank", "Reference"]}>
+          <Table head={["Date", ...(byProforma ? ["Proforma", "Tax invoice"] : ["Tax invoice"]), "Amount", "TDS deducted", "GST", "Bank", "Reference"]}>
             {receipts.map((r) => (
               <Row key={r.id} onClick={() => router.push(`/portal/invoices/${r.invoice_id}`)}>
                 <Cell className="text-ink-40">{formatDate(r.payment_date)}</Cell>
-                <Cell className="font-medium">{r.invoice_number}</Cell>
+                {byProforma && <Cell className="font-medium">{r.proforma_number ?? "-"}</Cell>}
+                <Cell className={byProforma ? "text-secondary" : "font-medium"}>{r.invoice_number}</Cell>
                 <Cell className="tabular-nums">{formatINR(r.amount)}</Cell>
                 <Cell className="tabular-nums">{formatINR(r.tds_deducted)}</Cell>
                 <Cell className="tabular-nums">{formatINR(r.gst_component)}</Cell>

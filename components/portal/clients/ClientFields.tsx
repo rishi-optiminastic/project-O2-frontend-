@@ -13,7 +13,7 @@ const MSME_OPTIONS = [
   { value: "yes", label: "Yes" },
 ];
 
-/** The client intake fields, shared by the create and edit forms. */
+/** The client intake fields, shared by the create and edit forms. Every field is required. */
 export function ClientFields({ client, agents }: { client?: Client; agents: AgentOption[] | null }) {
   const [msme, setMsme] = useState(client?.msme ?? false);
 
@@ -25,7 +25,7 @@ export function ClientFields({ client, agents }: { client?: Client; agents: Agen
       <Field label="Official email">
         <input name="email" type="email" required defaultValue={client?.email} className={inputClass} />
       </Field>
-      <GstField defaultValue={client?.gst_number} />
+      <GstField defaultValue={client?.gst_number} required />
       <Field label="Referral agent">
         <AgentSelect options={agents} defaultValue={client?.agent_id} />
       </Field>
@@ -33,6 +33,7 @@ export function ClientFields({ client, agents }: { client?: Client; agents: Agen
         <Field label="Address">
           <textarea
             name="billing_address"
+            required
             maxLength={TEXT_MAX}
             rows={2}
             defaultValue={client?.billing_address ?? ""}
@@ -40,15 +41,15 @@ export function ClientFields({ client, agents }: { client?: Client; agents: Agen
           />
         </Field>
       </div>
-      <Field label="COI (optional)">
-        <input name="coi" {...FIELD_RULES.cin} defaultValue={client?.coi ?? ""} className={inputClass} />
+      <Field label="COI">
+        <input name="coi" required {...FIELD_RULES.cin} defaultValue={client?.coi ?? ""} className={inputClass} />
       </Field>
       <Field label="MSME">
         <Select name="msme" options={MSME_OPTIONS} value={msme ? "yes" : "no"} onValueChange={(v) => setMsme(v === "yes")} />
       </Field>
       {msme && (
-        <Field label="MSME number (Udyam, optional)">
-          <input name="msme_number" {...FIELD_RULES.udyam} defaultValue={client?.msme_number ?? ""} className={inputClass} />
+        <Field label="MSME number (Udyam)">
+          <input name="msme_number" required {...FIELD_RULES.udyam} defaultValue={client?.msme_number ?? ""} className={inputClass} />
         </Field>
       )}
     </>

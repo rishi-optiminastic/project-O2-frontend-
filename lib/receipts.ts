@@ -36,6 +36,51 @@ export function splitOldestFirst(total: number, invoices: Invoice[]): Record<num
   return split;
 }
 
+/**
+ * Split ``total`` equally across every service line of the invoices, then add it up per invoice.
+ *
+ * Each line can take at most its part of the cash that clears its invoice (in proportion to the
+ * line's amount with GST). A line that needs less than an equal share is settled and the rest is
+ * shared among the other lines, so the split is as even as the invoices allow. Worked in paise;
+ * what no line can take stays unallocated.
+ */
+export function splitEquallyByService(total: number, invoices: Invoice[]): Record<number, number> {
+  const lines: { invoiceId: number; owed: number }[] = [];
+  for (const inv of invoices) {
+    const cash = Math.round(cashToClear(inv) * 100);
+    const weights = inv.lines?.length ? inv.lines.map((l) => l.taxable_value + l.gst_amount) : [1];
+    const sum = weights.reduce((s, w) => s + w, 0) || 1;
+    let given = 0;
+    weights.forEach((w, i) => {
+      const owed = i === weights.length - 1 ? cash - given : Math.floor((cash * w) / sum);
+      given += owed;
+      lines.push({ invoiceId: inv.id, owed });
+    });
+  }
+  let left = Math.round(total * 100);
+  const open = lines.filter((l) => l.owed > 0).sort((a, b) => a.owed - b.owed);
+  const taken = open.map((l, i) => {
+    const take = Math.min(l.owed, Math.floor(left / (open.length - i)));
+    left -= take;
+    return take;
+  });
+  // Paise left by rounding down go one each to lines with room.
+  open.forEach((l, i) => {
+    if (left > 0 && taken[i] < l.owed) {
+      taken[i] += 1;
+      left -= 1;
+    }
+  });
+  const split: Record<number, number> = Object.fromEntries(invoices.map((inv) => [inv.id, 0]));
+  open.forEach((l, i) => (split[l.invoiceId] += taken[i]));
+  return Object.fromEntries(Object.entries(split).map(([id, p]) => [id, paise(p / 100)]));
+}
+
+/** How many services an invoice bills (an invoice from before lines existed counts as one). */
+export function serviceCount(invoice: Invoice): number {
+  return invoice.lines?.length || 1;
+}
+
 /** Share ``gst`` over the lines in proportion to their amounts; the last line takes the rounding. */
 export function splitGst(gst: number, amounts: number[]): number[] {
   const total = amounts.reduce((s, a) => s + a, 0);

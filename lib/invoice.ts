@@ -13,7 +13,7 @@ export function documentKind(inv: Pick<Invoice, "is_issued">): "Tax invoice" | "
 /** Steps shown in the invoice stage tracker, in order. */
 export const WORKFLOW_STEPS = [
   { key: "draft", label: "Proforma" },
-  { key: "manager", label: "Manager approval" },
+  { key: "coordinator", label: "Coordinator approval" },
   { key: "client", label: "Client confirmation" },
   { key: "issued", label: "Tax invoice sent" },
 ] as const;
@@ -27,7 +27,7 @@ export function workflowStep(inv: Pick<Invoice, "status" | "is_issued">): number
     case "Awaiting Client":
       return 2;
     default:
-      return 1; // Draft, Changes Requested: waiting for a manager to approve and send it
+      return 1; // Draft, Changes Requested: waiting for a coordinator to approve and send it
   }
 }
 

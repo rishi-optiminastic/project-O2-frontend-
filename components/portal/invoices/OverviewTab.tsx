@@ -28,14 +28,22 @@ import { useMonth, withMonth } from "@/lib/month";
 /** Clients usually deduct 2% TDS (sections 194C / 194J technical); editable per invoice. */
 const DEFAULT_TDS_RATE = 2;
 
-/** Filter options, in lifecycle order: proforma stages first, then the issued tax invoice. */
-const STATUSES = [
-  ...PROFORMA_STAGES,
-  "Sent", "Pending", "Partially Paid", "Fully Paid", "Overdue", "Cancelled", "Disputed", "Reconciled",
-];
+/** Which client invoices a list shows: proformas (PI) or issued tax invoices (TI). */
+export type ClientInvoiceKind = "proforma" | "tax";
 
-/** The "Overview" tab — the full client-invoice list with search, filters and creation. */
-export function OverviewTab() {
+/** Filter options per kind, in lifecycle order. */
+const STATUSES: Record<ClientInvoiceKind, readonly string[]> = {
+  proforma: PROFORMA_STAGES,
+  tax: ["Sent", "Pending", "Partially Paid", "Fully Paid", "Overdue", "Cancelled", "Disputed", "Reconciled"],
+};
+
+/**
+ * The "Overview" tab for client invoices, with search and filters. `kind="proforma"`
+ * lists proformas and is where a new invoice is raised; `kind="tax"` lists the tax
+ * invoices issued from them.
+ */
+export function OverviewTab({ kind }: { kind: ClientInvoiceKind }) {
+  const isProforma = kind === "proforma";
   const { data: clients } = useApi<Client[]>("/clients");
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
@@ -55,14 +63,22 @@ export function OverviewTab() {
     return withMonth(`/invoices${qs ? `?${qs}` : ""}`, month);
   }, [search, status, clientId, month]);
 
-  const { data, loading, refetch } = useApi<Invoice[]>(path);
+  const { data: all, loading, refetch } = useApi<Invoice[]>(path);
   usePortalEvent(PORTAL_EVENTS.receiptRecorded, refetch);
+  // A proforma becomes a tax invoice when it is issued, so it moves from one list to the other.
+  const data = useMemo(() => all?.filter((i) => i.is_issued === !isProforma), [all, isProforma]);
+  const noun = isProforma ? "proforma" : "tax invoice";
 
   const clientName = (id: number) => clients?.find((c) => c.id === id)?.business_name ?? `Client #${id}`;
 
   async function duplicate(id: number) {
-    await api.post(`/invoices/${id}/duplicate`);
-    refetch();
+    try {
+      await api.post(`/invoices/${id}/duplicate`);
+      refetch();
+    } catch (err) {
+      // e.g. the copy would take the project past its contract value.
+      alert(err instanceof ApiError ? err.message : "Could not duplicate this invoice.");
+    }
   }
 
   const hasFilters = search.trim() !== "" || status !== "all" || clientId !== "all";
@@ -82,18 +98,19 @@ export function OverviewTab() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by invoice number, amount or description…"
+              placeholder={`Search by ${noun} number, amount or description…`}
               className={inputClass + " pl-10"}
             />
           </div>
-          <div className="flex gap-2 sm:shrink-0">
+          {/* New invoices start as proformas; a tax invoice is only ever issued from one. */}
+          {isProforma && <div className="flex gap-2 sm:shrink-0">
             <Button size="sm" variant="secondary" magnetic={false} onClick={() => router.push("/portal/invoices/bulk")} className="flex-1 sm:flex-none">
               <Upload className="h-4 w-4" /> Bulk upload
             </Button>
             <Button size="sm" magnetic={false} onClick={() => setCreateOpen(true)} className="flex-1 sm:flex-none">
-              <Plus className="h-4 w-4" /> New invoice
+              <Plus className="h-4 w-4" /> New proforma
             </Button>
-          </div>
+          </div>}
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -107,7 +124,7 @@ export function OverviewTab() {
             value={status}
             onValueChange={setStatus}
             className="min-w-[140px] flex-1 sm:w-44 sm:flex-none"
-            options={[{ value: "all", label: "All statuses" }, ...STATUSES.map((s) => ({ value: s, label: s }))]}
+            options={[{ value: "all", label: "All statuses" }, ...STATUSES[kind].map((s) => ({ value: s, label: s }))]}
           />
           {hasFilters && (
             <button
@@ -119,7 +136,7 @@ export function OverviewTab() {
           )}
           {data && data.length > 0 && (
             <span className="ml-auto shrink-0 text-xs text-ink-40">
-              {data.length} invoice{data.length === 1 ? "" : "s"}
+              {data.length} {noun}{data.length === 1 ? "" : "s"}
             </span>
           )}
         </div>
@@ -128,7 +145,13 @@ export function OverviewTab() {
       {loading ? (
         <Empty message="Loading invoices…" />
       ) : data && data.length > 0 ? (
-        <Table head={["Invoice", "Client", "Total", "Pending", "Status", "GST", "E-invoice", ""]}>
+        <Table
+          head={
+            isProforma
+              ? ["Proforma", "Client", "Total", "Status", ""]
+              : ["Tax invoice", "Client", "Total", "Pending", "Status", "GST", "E-invoice", ""]
+          }
+        >
           {data.map((i) => (
             <Row key={i.id} onClick={() => router.push(`/portal/invoices/${i.id}`)}>
               <Cell className="font-medium">
@@ -143,12 +166,16 @@ export function OverviewTab() {
               </Cell>
               <Cell>{clientName(i.client_id)}</Cell>
               <Cell>{formatINR(i.total_amount)}</Cell>
-              <Cell className={i.is_issued ? undefined : "text-ink-40"}>{i.is_issued ? formatINR(i.amount_pending) : "Not due"}</Cell>
+              {!isProforma && <Cell>{formatINR(i.amount_pending)}</Cell>}
               <Cell>
                 <StatusPill status={i.status} />
               </Cell>
-              <Cell className="text-secondary">{i.is_issued ? i.gst_status : "Not due (proforma)"}</Cell>
-              <Cell>{i.is_issued ? <StatusPill status={`E-invoice ${i.e_invoice_status.toLowerCase()}`} /> : <span className="text-ink-40">-</span>}</Cell>
+              {!isProforma && <Cell className="text-secondary">{i.gst_status}</Cell>}
+              {!isProforma && (
+                <Cell>
+                  <StatusPill status={`E-invoice ${i.e_invoice_status.toLowerCase()}`} />
+                </Cell>
+              )}
               <Cell>
                 <button
                   onClick={(e) => {
@@ -166,7 +193,7 @@ export function OverviewTab() {
           ))}
         </Table>
       ) : (
-        <InvoicesEmpty hasFilters={hasFilters} onCreate={() => setCreateOpen(true)} onClear={clearFilters} />
+        <InvoicesEmpty kind={kind} hasFilters={hasFilters} onCreate={() => setCreateOpen(true)} onClear={clearFilters} />
       )}
 
       <CreateInvoice
@@ -181,10 +208,12 @@ export function OverviewTab() {
 
 /** Friendlier empty state: guides a first invoice, or offers to clear filters. */
 function InvoicesEmpty({
+  kind,
   hasFilters,
   onCreate,
   onClear,
 }: {
+  kind: ClientInvoiceKind;
   hasFilters: boolean;
   onCreate: () => void;
   onClear: () => void;
@@ -204,18 +233,25 @@ function InvoicesEmpty({
             <X className="h-4 w-4" /> Clear filters
           </Button>
         </>
-      ) : (
+      ) : kind === "proforma" ? (
         <>
           <div>
-            <p className="text-sm font-medium">No invoices yet</p>
+            <p className="text-sm font-medium">No proforma invoices yet</p>
             <p className="mt-1 max-w-xs text-sm font-light text-secondary">
-              Create your first client invoice — GST is calculated automatically.
+              Raise a proforma for a client — GST is calculated automatically.
             </p>
           </div>
           <Button size="sm" magnetic={false} onClick={onCreate}>
-            <Plus className="h-4 w-4" /> New invoice
+            <Plus className="h-4 w-4" /> New proforma
           </Button>
         </>
+      ) : (
+        <div>
+          <p className="text-sm font-medium">No tax invoices yet</p>
+          <p className="mt-1 max-w-xs text-sm font-light text-secondary">
+            A tax invoice is issued from a proforma once the client has approved it.
+          </p>
+        </div>
       )}
     </div>
   );
@@ -285,7 +321,7 @@ function CreateInvoice({
       onOpenChange={onOpenChange}
       size="wide"
       title="New proforma invoice"
-      description="Raised against a project, which sets the client and the services billed. A manager approves it to send it to the client."
+      description="Raised against a project, which sets the client and the services billed. A coordinator approves it to send it to the client."
     >
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Invoice date (this month)">

@@ -31,7 +31,12 @@ export function Tabs<K extends string>({
   label: string;
 }) {
   return (
-    <div role="tablist" aria-label={label} className="flex w-full max-w-full items-center gap-1 overflow-x-auto rounded-full border border-line bg-white/50 p-1 sm:w-fit">
+    // Scrolls sideways on narrow screens, with the scrollbar hidden so it never shows on the pill.
+    <div
+      role="tablist"
+      aria-label={label}
+      className="flex w-full max-w-full items-center gap-1 overflow-x-auto overflow-y-hidden rounded-full border border-line bg-white/50 p-1 [scrollbar-width:none] sm:w-fit [&::-webkit-scrollbar]:hidden"
+    >
       {tabs.map((t) => (
         <button
           key={t.key}

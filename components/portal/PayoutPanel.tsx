@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import { Plus, Check, X } from "lucide-react";
-import { PageHeading, Table, Row, Cell, Empty, Field, inputClass, StatusPill, Panel } from "@/components/portal/ui";
+import { PageHeading, Table, Row, Cell, Empty, inputClass, StatusPill, Panel } from "@/components/portal/ui";
 import { Modal } from "@/components/portal/Modal";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { api, ApiError, type Approval } from "@/lib/api";
 import { formatINR, formatDate } from "@/lib/utils";
-import { FIELD_RULES, NAME_MAX, NUMBER_RULES, TEXT_MAX, matchesRule } from "@/lib/validation";
+import { FIELD_RULES, TEXT_MAX, matchesRule } from "@/lib/validation";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
-import { emitPortalEvent, PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
+import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
+import { OutwardPaymentForm } from "@/components/portal/OutwardPaymentForm";
 
 /**
  * The full payout / payment-approval flow — list, create, CEO sign-off, and
@@ -90,69 +91,9 @@ export function PayoutPanel({ title, description }: { title?: string; descriptio
   );
 }
 
-/** Raise an outgoing payment for CFO, then CEO, sign-off. */
-export function CreateApproval({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    const fd = new FormData(e.currentTarget);
-    const amount = Number(fd.get("amount"));
-    const tax = Number(fd.get("tax_deductions") || 0);
-    try {
-      await api.post("/approvals", {
-        payee_name: fd.get("payee_name"),
-        amount,
-        purpose: fd.get("purpose"),
-        tax_deductions: tax,
-        net_payable: amount - tax,
-        bank_details: fd.get("bank_details"),
-      });
-      onOpenChange(false);
-      emitPortalEvent(PORTAL_EVENTS.paymentRequested);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Record a payment"
-      description="Money going out to a vendor or other payee. It goes to the CFO, then the CEO, and is released once the bank reference (UTR) is entered.">
-      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Payee name">
-          <input name="payee_name" required maxLength={NAME_MAX} className={inputClass} />
-        </Field>
-        <Field label="Amount (₹)">
-          <input name="amount" {...NUMBER_RULES.positiveMoney} required className={inputClass} />
-        </Field>
-        <Field label="Tax deductions (₹)">
-          <input name="tax_deductions" {...NUMBER_RULES.money} defaultValue={0} className={inputClass} />
-        </Field>
-        <Field label="Purpose">
-          <input name="purpose" maxLength={TEXT_MAX} className={inputClass} />
-        </Field>
-        <div className="sm:col-span-2">
-          <Field label="Bank details">
-            <input name="bank_details" maxLength={TEXT_MAX} placeholder="Bank · A/C · IFSC" className={inputClass} />
-          </Field>
-        </div>
-        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
-        <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
-          <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" magnetic={false} disabled={saving}>
-            {saving ? "Saving…" : "Create request"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+/** Raise an outgoing payment for CEO sign-off: against vendor bills, or to another payee. */
+export function CreateApproval({ open, onOpenChange, vendorId }: { open: boolean; onOpenChange: (v: boolean) => void; vendorId?: number }) {
+  return <OutwardPaymentForm open={open} onOpenChange={onOpenChange} vendorId={vendorId} />;
 }
 
 function ApprovalDetail({ approval, onClose, onChanged }: { approval: Approval; onClose: () => void; onChanged: () => void }) {

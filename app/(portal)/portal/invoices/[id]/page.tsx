@@ -172,10 +172,10 @@ export default function InvoiceDetailPage() {
       <motion.div className="flex flex-col gap-8" initial="hidden" animate="show" variants={stagger(0.08, 0.04)}>
         <motion.button
           variants={fadeUp}
-          onClick={() => router.push("/portal/invoices")}
+          onClick={() => router.push(invoice.is_issued ? "/portal/invoices?type=ti" : "/portal/invoices")}
           className="inline-flex w-fit items-center gap-1.5 text-sm text-secondary transition-colors hover:text-foreground"
         >
-          <ArrowLeft className="h-4 w-4" /> All invoices
+          <ArrowLeft className="h-4 w-4" /> {invoice.is_issued ? "Tax invoices" : "Proforma invoices"}
         </motion.button>
 
         {/* Identity header */}

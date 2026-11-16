@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Plus, X } from "lucide-react";
 import { Field, inputClass } from "@/components/portal/ui";
 import { GstField } from "@/components/portal/GstField";
@@ -45,12 +45,12 @@ function isBlank(a: VendorBankAccount) {
 /**
  * The vendor onboarding fields shared by the create and edit forms, as the PROJECT O2 sheet
  * lays them out: name, email, GSTIN (fills the name and address), address, bank accounts,
- * COI (optional), MSME Yes/No with the Udyam number optional, and the TDS rate. The Group Co
- * form leaves the rate out. The PAN is taken from the GSTIN. Bank accounts are kept in state
+ * COI (optional), MSME Yes/No with the Udyam number optional, the TDS section (Group Co too)
+ * and Optiminastic's commission. The PAN is taken from the GSTIN. Bank accounts are kept in state
  * and travel in a hidden JSON field, so the parent form can stay uncontrolled and read
  * everything with vendorPayload().
  */
-export function VendorFields({ vendor }: { vendor?: Vendor }) {
+export function VendorFields({ vendor, beforeBankAccounts }: { vendor?: Vendor; /** Rendered just above the bank accounts (the onboarding form puts services and projects here). */ beforeBankAccounts?: ReactNode }) {
   const [accounts, setAccounts] = useState<VendorBankAccount[]>(
     vendor?.bank_accounts.length
       ? vendor.bank_accounts.map((a) => ({
@@ -121,20 +121,30 @@ export function VendorFields({ vendor }: { vendor?: Vendor }) {
       ) : (
         <div className="hidden sm:block" aria-hidden />
       )}
-      {isGroup ? (
-        // The Group Co form has no rate; the vendor keeps the one on file (or the default).
+      {/* Asked of every vendor, Group Co included: their bills are taxed at source too. */}
+      <Field label={isGroup ? "TDS section (Group Co)" : "TDS section on their invoices"}>
+        <Select
+          value={tdsSection}
+          onValueChange={setTdsSection}
+          options={TDS_SECTIONS.map((t) => ({ value: t.key, label: `${t.label} (${t.rate}%)` }))}
+        />
         <input type="hidden" name="default_tds_section" value={tdsSection} />
-      ) : (
-        <Field label="TDS rate on their invoices">
-          <Select
-            value={tdsSection}
-            onValueChange={setTdsSection}
-            options={TDS_SECTIONS.map((t) => ({ value: t.key, label: `${t.label} (${t.rate}%)` }))}
-          />
-          <input type="hidden" name="default_tds_section" value={tdsSection} />
-        </Field>
-      )}
+      </Field>
+      <Field label="Percentage (rate) · Optiminastic commission %">
+        <input
+          name="commission_rate"
+          type="number"
+          min={0}
+          max={100}
+          step="0.01"
+          required
+          defaultValue={vendor?.commission_rate ?? 0}
+          title="Kept back from what the vendor is paid on each bill; can be changed per bill."
+          className={inputClass}
+        />
+      </Field>
 
+      {beforeBankAccounts}
       <fieldset className="flex flex-col gap-3 sm:col-span-2">
         <legend className="mb-3 text-xs tracking-eyebrow text-secondary">Bank accounts (at least one)</legend>
         {accounts.map((account, index) => (
@@ -215,6 +225,7 @@ export function vendorPayload(form: HTMLFormElement) {
   return {
     ...fields,
     [MSME_FIELD]: fields[MSME_FIELD] === "yes",
+    commission_rate: Number(fields.commission_rate || 0),
     // Sent only by the CFO and CEO, who see the toggle; others leave the flag as it is.
     ...(group === undefined ? {} : { is_group_company: group === "true" }),
     bank_accounts: JSON.parse(String(accounts ?? "[]")) as VendorBankAccount[],

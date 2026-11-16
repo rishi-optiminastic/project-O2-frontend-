@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Download, Mail, Pencil, Trash2, FolderKanban, Users } from "lucide-react";
+import { ArrowLeft, Download, Mail, Pencil, Trash2, FolderKanban, FileText, Plus, X } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { Panel, MetricCard, Table, Row, Cell, Empty, StatusPill, DataField } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { ProjectForm } from "@/components/portal/projects/ProjectForm";
 import { ProjectVendorsForm } from "@/components/portal/projects/ProjectVendorsForm";
+import { AssignVendorForm } from "@/components/portal/projects/AssignVendorForm";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
@@ -21,6 +22,16 @@ export default function ProjectDetailPage() {
   const { data: project, loading, refetch, setData } = useApi<ProjectDetail>(id ? `/projects/${id}` : null);
   const [editOpen, setEditOpen] = useState(false);
   const [vendorsOpen, setVendorsOpen] = useState(false);
+  // The vendor-to-service mapping dialog. A new project arrives with ?assign=1 and opens it straight away.
+  const [assigning, setAssigning] = useState(
+    () => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("assign") === "1",
+  );
+  // Drop ?assign=1 so a refresh does not open the dialog again.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has("assign")) {
+      window.history.replaceState(window.history.state, "", window.location.pathname);
+    }
+  }, []);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -52,6 +63,14 @@ export default function ProjectDetailPage() {
       return r.emailed
         ? `Work order ${r.work_order_number} emailed to ${r.to_email}.`
         : `Email isn't set up, so nothing was sent. Download work order ${r.work_order_number} and send it to ${r.to_email} yourself.`;
+    });
+  }
+
+  function unassign(v: ProjectVendor) {
+    if (!confirm(`Remove ${v.vendor_name} from this project? Their UPS codes stop being billable.`)) return;
+    run(`remove-${v.vendor_id}`, async () => {
+      await api.del(`/projects/${id}/vendors/${v.vendor_id}`);
+      return `${v.vendor_name} removed from the project.`;
     });
   }
 
@@ -152,7 +171,7 @@ export default function ProjectDetailPage() {
           <MetricCard
             label="Budget left"
             value={formatINR(project?.remaining_budget ?? 0)}
-            sub={`${project?.work_percent_assigned ?? 0}% of the work assigned`}
+            sub={`${project?.vendors.length ?? 0} vendor${project?.vendors.length === 1 ? "" : "s"} assigned`}
           />
         </div>
 
@@ -213,20 +232,42 @@ export default function ProjectDetailPage() {
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendors and work orders</h2>
             {canManage && project && (
-              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setVendorsOpen(true)}>
-                <Users className="h-4 w-4" /> Edit vendors
-              </Button>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" magnetic={false} onClick={() => setVendorsOpen(true)}>
+                  <FileText className="h-4 w-4" /> Scope &amp; budget
+                </Button>
+                <Button size="sm" magnetic={false} onClick={() => setAssigning(true)}>
+                  <Plus className="h-4 w-4" /> Assign vendors
+                </Button>
+              </div>
             )}
           </div>
           {project && project.vendors.length > 0 ? (
-            <Table head={["Vendor", "% of work", "Agreed cost", "Invoiced", "Work order", ...(canManage ? [""] : [])]}>
+            <Table head={["Vendor", "Services and UPS codes", "Agreed cost", "Invoiced", "Work order", ...(canManage ? [""] : [])]}>
               {project.vendors.map((v) => (
                 <Row key={v.id}>
                   <Cell className="font-medium">
                     {v.vendor_name}
                     <span className="block text-xs font-light text-ink-40">{v.vendor_email}</span>
                   </Cell>
-                  <Cell className="tabular-nums">{v.work_percent}%</Cell>
+                  <Cell className="whitespace-normal">
+                    {v.services.length > 0 ? (
+                      <ul className="flex flex-col gap-1.5">
+                        {v.services.map((s) => (
+                          <li key={s.id} className="leading-tight">
+                            <span className="font-mono text-xs font-medium">{s.code}</span>
+                            <span className="block text-xs text-secondary">
+                              {s.service_title} · {formatINR(s.agreed_cost)}
+                              {s.invoiced > 0 && <> · billed {formatINR(s.invoiced)}</>}
+                              {s.over_invoiced && <span className="font-medium text-danger"> · over</span>}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <span className="text-xs text-warning">No services yet: use Edit to assign them</span>
+                    )}
+                  </Cell>
                   <Cell className="tabular-nums">{formatINR(v.agreed_cost)}</Cell>
                   <Cell className="tabular-nums">
                     {formatINR(v.invoiced)}
@@ -244,6 +285,19 @@ export default function ProjectDetailPage() {
                         <Button size="sm" magnetic={false} onClick={() => email(v)} disabled={busy !== null}>
                           <Mail className="h-4 w-4" /> {busy === `email-${v.vendor_id}` ? "Sending…" : v.work_order_sent_at ? "Re-send" : "Email"}
                         </Button>
+                        <Button size="sm" variant="secondary" magnetic={false} onClick={() => setAssigning(true)} disabled={busy !== null} aria-label={`Edit ${v.vendor_name}'s services`}>
+                          <Pencil className="h-4 w-4" /> Edit
+                        </Button>
+                        <button
+                          type="button"
+                          onClick={() => unassign(v)}
+                          disabled={busy !== null}
+                          title={v.invoiced > 0 ? "Already invoiced: cannot be removed" : "Remove from project"}
+                          aria-label={`Remove ${v.vendor_name} from the project`}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full text-ink-40 transition-colors hover:bg-mist hover:text-foreground disabled:opacity-40"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
                       </div>
                     </Cell>
                   )}
@@ -251,9 +305,27 @@ export default function ProjectDetailPage() {
               ))}
             </Table>
           ) : (
-            <Empty message={loading ? "Loading…" : "No vendors on this project yet. Add them with Edit vendors."} />
+            <Empty message={loading ? "Loading…" : "No vendors on this project yet. Use Assign vendors to map a vendor to each service."} />
           )}
         </section>
+
+        {project && project.service_margins.length > 0 && (
+          <section className="flex flex-col gap-4" aria-label="Margin by service">
+            <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Margin by service</h2>
+            <Table head={["Service", "Billed to client", "Agreed with vendors", "Invoiced by vendors", "Margin"]}>
+              {project.service_margins.map((m) => (
+                <Row key={m.service_id}>
+                  <Cell className="font-medium">{m.service_title}</Cell>
+                  <Cell className="tabular-nums">{formatINR(m.billed)}</Cell>
+                  <Cell className="tabular-nums text-secondary">{formatINR(m.vendor_committed)}</Cell>
+                  <Cell className="tabular-nums text-secondary">{formatINR(m.vendor_invoiced)}</Cell>
+                  <Cell className={"tabular-nums font-medium " + (m.margin < 0 ? "text-danger" : "")}>{formatINR(m.margin)}</Cell>
+                </Row>
+              ))}
+            </Table>
+            <p className="text-xs text-ink-40">Before GST. Margin = billed to the client minus what vendors have invoiced for that service.</p>
+          </section>
+        )}
 
         <section className="flex flex-col gap-4" aria-label="Vendor invoices">
           <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendor invoices for this project</h2>
@@ -273,7 +345,7 @@ export default function ProjectDetailPage() {
               ))}
             </Table>
           ) : (
-            <Empty message="No vendor invoices yet. Record them from the vendor's page and pick this project." />
+            <Empty message="No vendor invoices yet. Record them from Invoices > Vendor Invoice against this project's UPS codes." />
           )}
         </section>
       </div>
@@ -284,7 +356,10 @@ export default function ProjectDetailPage() {
       {vendorsOpen && project && (
         <ProjectVendorsForm open={vendorsOpen} onOpenChange={setVendorsOpen} project={project} onSaved={setData} />
       )}
-      <Modal open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete this project?" description="Its vendor shares and work order records are removed. This cannot be undone.">
+      {assigning && project && (
+        <AssignVendorForm open onOpenChange={(o) => !o && setAssigning(false)} project={project} onSaved={setData} />
+      )}
+      <Modal open={deleteOpen} onOpenChange={setDeleteOpen} title="Delete this project?" description="Its vendor assignments, UPS codes and work order records are removed. This cannot be undone.">
         <ModalFooter>
           <Button type="button" variant="secondary" magnetic={false} onClick={() => setDeleteOpen(false)}>
             Keep it

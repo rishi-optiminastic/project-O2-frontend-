@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Mail, Phone, Package, BadgeCheck, Plus, Pencil } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Package, BadgeCheck, Plus, Pencil, Layers, FileText, Briefcase } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import {
   Panel,
@@ -14,20 +14,21 @@ import {
   Empty,
   StatusPill,
   DataField,
-  Field,
-  inputClass,
 } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
-import { Select } from "@/components/portal/Select";
 import { VendorFields, vendorPayload } from "@/components/portal/vendors/VendorFields";
+import { VendorInvoiceForm } from "@/components/portal/vendors/VendorInvoiceForm";
+import { VendorServicesForm } from "@/components/portal/vendors/VendorServicesForm";
+import { VendorJobsDialog } from "@/components/portal/vendors/VendorJobsDialog";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
-import { api, ApiError, type Vendor, type VendorInvoice, type Project, TDS_SECTIONS } from "@/lib/api";
-import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES, indiaToday, pastDateRule } from "@/lib/validation";
+import { api, ApiError, type Vendor, type VendorAssignment, type VendorInvoice, type Project } from "@/lib/api";
 import { MonthFilter } from "@/components/portal/MonthFilter";
+import { Tabs } from "@/components/portal/Tabs";
+import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
 import { useMonth, withMonth } from "@/lib/month";
 
 export default function VendorDetailPage() {
@@ -36,7 +37,9 @@ export default function VendorDetailPage() {
   const { hasRole } = useAuth();
   const vid = Number(id);
 
-  const { data: vendor, loading, refetch } = useApi<Vendor>(id ? `/vendors/${id}` : null);
+  const { data: vendor, loading, refetch, setData: setVendor } = useApi<Vendor>(id ? `/vendors/${id}` : null);
+  const { data: assignmentData, refetch: refetchAssignments } = useApi<VendorAssignment[]>(id ? `/vendors/${id}/assignments` : null);
+  const assignments = assignmentData ?? [];
   const [month] = useMonth();
   const { data: allInvoices, refetch: refetchInvoices } = useApi<VendorInvoice[]>(withMonth("/vendors/invoices/all", month));
   const { data: allProjects } = useApi<Project[]>("/projects");
@@ -45,18 +48,25 @@ export default function VendorDetailPage() {
   const [err, setErr] = useState<string | null>(null);
   const [invOpen, setInvOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [servicesOpen, setServicesOpen] = useState(false);
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const [view, setView] = useState<"jobs" | "invoices">("jobs");
+  // A bill recorded from the floating Record button updates the jobs and invoices here.
+  usePortalEvent(PORTAL_EVENTS.vendorInvoiceRecorded, refetchInvoices);
+  usePortalEvent(PORTAL_EVENTS.vendorInvoiceRecorded, refetchAssignments);
 
   const canManage = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
   const canAddInvoice = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER", "FINANCE_EXECUTIVE");
   const invoices = (allInvoices ?? []).filter((i) => i.vendor_id === vid);
-  // This vendor's share of each project it works on.
-  const projects = (allProjects ?? []).flatMap((p) =>
-    p.vendors.filter((v) => v.vendor_id === vid).map((share) => ({ project: p, share })),
+  // The work order this vendor has on each project, by project id.
+  const workOrders = new Map(
+    (allProjects ?? []).flatMap((p) => p.vendors.filter((v) => v.vendor_id === vid).map((v) => [p.id, v.work_order_number] as const)),
   );
+  const projectCount = new Set(assignments.map((a) => a.project_id)).size;
 
   const payable = invoices.reduce((s, i) => s + i.net_payable, 0);
   const tds = invoices.reduce((s, i) => s + i.tds_amount, 0);
-  const contracted = projects.reduce((s, { share }) => s + share.agreed_cost, 0);
+  const contracted = assignments.reduce((s, a) => s + a.agreed_cost, 0);
 
   async function verify() {
     setBusy(true);
@@ -116,6 +126,11 @@ export default function VendorDetailPage() {
           </div>
           <div className="flex items-center gap-3">
             <StatusPill status={vendor?.is_verified ? "Verified" : vendor?.approval_status ?? "Pending"} />
+            {vendor && (
+              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setJobsOpen(true)}>
+                <Briefcase className="h-4 w-4" /> Jobs{assignments.length > 0 && ` (${assignments.length})`}
+              </Button>
+            )}
             {vendor && canManage && (
               <Button size="sm" variant="secondary" magnetic={false} onClick={() => setEditOpen(true)}>
                 <Pencil className="h-4 w-4" /> Edit
@@ -135,7 +150,7 @@ export default function VendorDetailPage() {
         <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard label="Net payable" value={formatINR(payable)} sub={`${invoices.length} invoices`} spark={invoices.map((i) => i.net_payable).slice(-9)} />
           <MetricCard label="TDS deducted" value={formatINR(tds)} sub="Withheld at source" spark={invoices.map((i) => i.tds_amount).slice(-9)} />
-          <MetricCard label="Contracted" value={formatINR(contracted)} sub={`${projects.length} project${projects.length === 1 ? "" : "s"}`} spark={projects.map(({ share }) => share.agreed_cost).slice(-9)} />
+          <MetricCard label="Contracted" value={formatINR(contracted)} sub={`${assignments.length} service${assignments.length === 1 ? "" : "s"} on ${projectCount} project${projectCount === 1 ? "" : "s"}`} spark={assignments.map((a) => a.agreed_cost).slice(-9)} />
           <MetricCard label="Onboarding" value={vendor?.is_verified ? "Verified" : "Pending"} sub={vendor ? formatDate(vendor.created_at) : ""} spark={[3, 5, 4, 6, 5, 7, 6, 8, vendor?.is_verified ? 10 : 5]} />
         </motion.div>
 
@@ -149,6 +164,34 @@ export default function VendorDetailPage() {
               <DataField label="MSME (Udyam)" value={vendor?.msme_number ?? (vendor ? "Not registered" : null)} mono={!!vendor?.msme_number} />
               <DataField label="COI" value={vendor?.coi} mono />
             </div>
+          </Panel>
+        </motion.div>
+
+        {/* Services the vendor provides */}
+        <motion.div variants={fadeUp}>
+          <Panel>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Services provided</h2>
+              {vendor && canManage && (
+                <Button size="sm" variant="secondary" magnetic={false} onClick={() => setServicesOpen(true)}>
+                  <Layers className="h-4 w-4" /> Edit services
+                </Button>
+              )}
+            </div>
+            {vendor && vendor.services.length > 0 ? (
+              <ul className="flex flex-wrap gap-2">
+                {vendor.services.map((s) => (
+                  <li key={s.id} className="rounded-full border border-line bg-white/60 px-3 py-1.5 text-sm">
+                    {s.title}
+                    <span className="ml-1.5 font-mono text-xs text-ink-40">{s.sac_code ?? ""}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-ink-40">
+                {vendor ? "No services yet. Add the services this vendor provides so projects can assign them." : "…"}
+              </p>
+            )}
           </Panel>
         </motion.div>
 
@@ -171,76 +214,125 @@ export default function VendorDetailPage() {
           )}
         </motion.div>
 
-        {/* Projects */}
+        {/* Jobs (each UPS code the vendor is assigned) and the vendor's invoices */}
         <motion.div variants={fadeUp} className="flex flex-col gap-4">
-          <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Projects</h2>
-          {projects.length > 0 ? (
-            <Table head={["Project", "% of work", "Agreed cost", "Work order", "Status"]}>
-              {projects.map(({ project, share }) => (
-                <Row key={project.id} onClick={() => router.push(`/portal/projects/${project.id}`)}>
-                  <Cell className="font-medium">
-                    {project.title}
-                    <span className="block font-mono text-xs text-ink-40">{project.code}</span>
-                  </Cell>
-                  <Cell className="tabular-nums">{share.work_percent}%</Cell>
-                  <Cell className="tabular-nums">{formatINR(share.agreed_cost)}</Cell>
-                  <Cell className="font-mono text-xs text-ink-40">{share.work_order_number ?? "Not issued"}</Cell>
-                  <Cell>
-                    <StatusPill status={project.status} />
-                  </Cell>
-                </Row>
-              ))}
-            </Table>
-          ) : (
-            <Empty message="Not on any project yet. Add this vendor from the Projects page." />
-          )}
-        </motion.div>
-
-        {/* Vendor invoices */}
-        <motion.div variants={fadeUp} className="flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="flex flex-wrap items-center gap-4">
-              <h2 className="text-sm font-medium tracking-eyebrow text-secondary">Vendor invoices</h2>
-              <MonthFilter />
-            </div>
-            {canAddInvoice && (
-              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setInvOpen(true)}>
-                <Plus className="h-4 w-4" /> New invoice
-              </Button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <Tabs
+              tabs={[
+                { key: "jobs", label: "Jobs", badge: assignments.length || undefined },
+                { key: "invoices", label: "Invoices", badge: invoices.length || undefined },
+              ]}
+              active={view}
+              onChange={setView}
+              layoutId="vendor-view"
+              label="Vendor jobs and invoices"
+            />
+            {view === "invoices" && (
+              <div className="flex flex-wrap items-center gap-3">
+                <MonthFilter />
+                {canAddInvoice && (
+                  <Button size="sm" variant="secondary" magnetic={false} onClick={() => setInvOpen(true)}>
+                    <Plus className="h-4 w-4" /> Upload invoice
+                  </Button>
+                )}
+              </div>
             )}
           </div>
-          {invoices.length > 0 ? (
-            <Table head={["Invoice", "Date", "Amount", "TDS", "Net payable", "Status"]}>
+
+          {view === "jobs" ? (
+            assignments.length > 0 ? (
+              <Table head={["UPS code", "Project", "Service", "Amount", "Invoiced", "Invoice status", "Paid", "Work order"]}>
+                {assignments.map((a) => (
+                  <Row key={a.id} onClick={() => router.push(`/portal/projects/${a.project_id}`)}>
+                    <Cell className="font-mono text-xs font-medium">{a.code}</Cell>
+                    <Cell>
+                      {a.project_title}
+                      <span className="block font-mono text-xs text-ink-40">{a.project_code}</span>
+                    </Cell>
+                    <Cell className="text-secondary">{a.service_title}</Cell>
+                    <Cell className="tabular-nums">{formatINR(a.agreed_cost)}</Cell>
+                    <Cell className="tabular-nums text-secondary">
+                      {formatINR(a.invoiced)}
+                      {a.remaining > 0 && a.invoiced > 0 && <span className="block text-xs text-ink-40">{formatINR(a.remaining)} left</span>}
+                    </Cell>
+                    <Cell>
+                      <StatusPill status={a.invoice_status} />
+                    </Cell>
+                    <Cell className="tabular-nums">{formatINR(a.paid)}</Cell>
+                    <Cell className="font-mono text-xs text-ink-40">{workOrders.get(a.project_id) ?? "Not issued"}</Cell>
+                  </Row>
+                ))}
+              </Table>
+            ) : (
+              <Empty message="No jobs yet. Assign this vendor from a project with Assign vendor; each service gets a UPS code." />
+            )
+          ) : invoices.length > 0 ? (
+            <Table head={["Invoice", "UPS codes", "Date", "Amount", "TDS", "Net payable", "Commission", "Paid to vendor", "Status", "File"]}>
               {invoices.map((inv) => (
                 <Row key={inv.id}>
                   <Cell className="font-medium">{inv.invoice_number}</Cell>
+                  <Cell className="font-mono text-xs text-secondary">{inv.lines.map((l) => l.code).join(", ") || "-"}</Cell>
                   <Cell className="text-ink-40">{formatDate(inv.invoice_date)}</Cell>
                   <Cell className="tabular-nums">{formatINR(inv.invoice_amount)}</Cell>
                   <Cell className="tabular-nums text-ink-40">{formatINR(inv.tds_amount)}</Cell>
-                  <Cell className="tabular-nums">{formatINR(inv.net_payable)}</Cell>
+                  <Cell className="tabular-nums text-secondary">{formatINR(inv.net_payable)}</Cell>
+                  <Cell className="tabular-nums text-ink-40">
+                    {inv.commission_amount > 0 ? `- ${formatINR(inv.commission_amount)}` : "-"}
+                    {inv.commission_rate > 0 && <span className="block text-xs">{inv.commission_rate}%</span>}
+                  </Cell>
+                  <Cell className="tabular-nums font-medium">{formatINR(inv.amount_payable)}</Cell>
                   <Cell>
                     <StatusPill status={inv.status} />
+                  </Cell>
+                  <Cell>
+                    {inv.document_name ? (
+                      <button
+                        type="button"
+                        onClick={() => api.download(`/vendors/invoices/${inv.id}/document`, inv.document_name ?? "invoice")}
+                        className="inline-flex items-center gap-1 text-xs text-secondary underline hover:text-foreground"
+                      >
+                        <FileText className="h-3.5 w-3.5" /> View
+                      </button>
+                    ) : (
+                      <span className="text-xs text-ink-40">-</span>
+                    )}
                   </Cell>
                 </Row>
               ))}
             </Table>
           ) : (
-            <Empty message="No vendor invoices yet." />
+            <Empty message="No vendor invoices this month. Upload one and map it to the vendor's UPS codes." />
           )}
         </motion.div>
       </motion.div>
 
-      <VendorInvoiceForm
-        // Remounted once the vendor loads, so its usual TDS section is the starting choice.
-        key={vendor?.default_tds_section ?? "default"}
-        open={invOpen}
-        onOpenChange={setInvOpen}
-        vendorId={vid}
-        vendorGstin={vendor?.gst_number}
-        defaultTdsSection={vendor?.default_tds_section}
-        projects={projects.map(({ project }) => project)}
-        onSaved={refetchInvoices}
-      />
+      {vendor && (
+        <VendorInvoiceForm
+          open={invOpen}
+          onOpenChange={setInvOpen}
+          vendor={vendor}
+          onSaved={() => {
+            refetchInvoices();
+            refetchAssignments();
+          }}
+        />
+      )}
+      {vendor && servicesOpen && (
+        <VendorServicesForm open onOpenChange={setServicesOpen} vendor={vendor} assignments={assignments} onSaved={setVendor} />
+      )}
+      {vendor && jobsOpen && (
+        <VendorJobsDialog
+          open
+          onOpenChange={setJobsOpen}
+          vendor={vendor}
+          jobs={assignments}
+          canManage={canManage}
+          onChanged={() => {
+            refetch();
+            refetchAssignments();
+          }}
+        />
+      )}
       {vendor && (
         <VendorEditForm open={editOpen} onOpenChange={setEditOpen} vendor={vendor} onSaved={refetch} />
       )}
@@ -290,122 +382,6 @@ function VendorEditForm({
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </ModalFooter>
-      </form>
-    </Modal>
-  );
-}
-
-function VendorInvoiceForm({
-  open,
-  onOpenChange,
-  vendorId,
-  vendorGstin,
-  defaultTdsSection,
-  projects,
-  onSaved,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  vendorId: number;
-  vendorGstin: string | null | undefined;
-  /** The vendor's usual TDS section, prefilled; it can still be changed for one bill. */
-  defaultTdsSection: string | null | undefined;
-  projects: Project[];
-  onSaved: () => void;
-}) {
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [amount, setAmount] = useState(0);
-  const [gstRate, setGstRate] = useState("18");
-  const [interstate, setInterstate] = useState(false);
-  const [section, setSection] = useState<string>(defaultTdsSection ?? TDS_SECTIONS[0].key);
-
-  // Same arithmetic as the server, so the preview matches what gets saved.
-  const tdsRate = TDS_SECTIONS.find((t) => t.key === section)?.rate ?? 0;
-  const gst = +((amount * Number(gstRate)) / 100).toFixed(2);
-  const tds = +((amount * tdsRate) / 100).toFixed(2);
-  const net = +(amount + gst - tds).toFixed(2);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    const fd = new FormData(e.currentTarget);
-    try {
-      await api.post("/vendors/invoices", {
-        vendor_id: vendorId,
-        project_id: fd.get("project_id") && fd.get("project_id") !== "none" ? Number(fd.get("project_id")) : null,
-        invoice_number: fd.get("invoice_number"),
-        invoice_date: fd.get("invoice_date"),
-        invoice_amount: amount,
-        gst_rate: Number(gstRate),
-        is_interstate: interstate,
-        tds_section: section,
-      });
-      onOpenChange(false);
-      onSaved();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save invoice");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Modal open={open} onOpenChange={onOpenChange} title="Record vendor invoice" description="GST is worked out from the rate; TDS from the section. Net payable = amount + GST - TDS.">
-      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Invoice number">
-          <input name="invoice_number" required {...FIELD_RULES.invoiceNumber} className={inputClass} />
-        </Field>
-        <Field label="Invoice date">
-          <input name="invoice_date" {...pastDateRule()} required defaultValue={indiaToday()} className={inputClass} />
-        </Field>
-        <Field label="Project (optional)">
-          <Select
-            name="project_id"
-            defaultValue="none"
-            options={[{ value: "none", label: "— None —" }, ...projects.map((p) => ({ value: String(p.id), label: `${p.code} ${p.title}` }))]}
-          />
-        </Field>
-        <Field label="Amount before GST (₹)">
-          <input name="invoice_amount" {...NUMBER_RULES.positiveMoney} required value={amount} onChange={(e) => setAmount(Number(e.target.value))} className={inputClass} />
-        </Field>
-        <Field label="GST rate">
-          <Select value={gstRate} onValueChange={setGstRate} options={GST_RATE_OPTIONS} />
-        </Field>
-        <Field label="TDS section">
-          <Select value={section} onValueChange={setSection} options={TDS_SECTIONS.map((t) => ({ value: t.key, label: `${t.label} (${t.rate}%)` }))} />
-        </Field>
-        <label className="flex items-center gap-2 text-sm font-light text-secondary sm:col-span-2">
-          <input type="checkbox" checked={interstate} onChange={(e) => setInterstate(e.target.checked)} className="accent-foreground" />
-          Vendor is in another state (IGST instead of CGST + SGST)
-        </label>
-        {!vendorGstin && gst > 0 && (
-          <p className="text-xs text-warning sm:col-span-2">
-            ⚠ This vendor has no GSTIN on record, so the GST on this bill cannot be claimed as input credit. Add their GSTIN on the vendor first if they have one.
-          </p>
-        )}
-
-        <div className="sm:col-span-2 grid grid-cols-1 gap-3 rounded-2xl border border-line bg-mist/50 p-4 text-center text-sm sm:grid-cols-3">
-          <div>
-            <p className="text-xs text-ink-40">TDS</p>
-            <p className="mt-1 font-medium tabular-nums">{formatINR(tds)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-ink-40">{interstate ? "IGST" : "CGST + SGST"}</p>
-            <p className="mt-1 font-medium tabular-nums">{formatINR(gst)}</p>
-          </div>
-          <div>
-            <p className="text-xs text-ink-40">Net payable</p>
-            <p className="mt-1 font-medium tabular-nums">{formatINR(net)}</p>
-          </div>
-        </div>
-
-        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
-        <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
-          <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="submit" magnetic={false} disabled={saving}>{saving ? "Saving…" : "Save invoice"}</Button>
-        </div>
       </form>
     </Modal>
   );

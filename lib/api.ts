@@ -75,6 +75,8 @@ export const api = {
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 
   /** Download a file the API generates (e.g. a PDF) and save it under `filename`. */
@@ -330,6 +332,8 @@ export interface PaymentReceipt {
   id: number;
   invoice_id: number;
   invoice_number: string;
+  /** The proforma this tax invoice was issued from. */
+  proforma_number?: string | null;
   client_id: number;
   amount: number;
   payment_date: string;
@@ -529,12 +533,77 @@ export interface Vendor {
   is_group_company: boolean;
   /** The TDS section prefilled on this vendor's invoices (a key of TDS_SECTIONS); null means the usual default. */
   default_tds_section: string | null;
+  /** Optiminastic's commission (%), kept back from what the vendor is paid; prefilled on each bill. */
+  commission_rate: number;
+  /** Catalogue services the vendor provides; a vendor is assigned to projects only for these. */
+  services: VendorService[];
   created_at: string;
+}
+
+export interface VendorService {
+  id: number;
+  title: string;
+  sac_code: string | null;
+  is_active: boolean;
+}
+
+/** A service a vendor is assigned on a project, under its permanent code: what a vendor bill charges. */
+export interface VendorAssignment {
+  id: number;
+  /** e.g. PRJ-0042-V01-S02 */
+  code: string;
+  project_id: number;
+  project_code: string;
+  project_title: string;
+  service_id: number;
+  service_title: string;
+  sac_code: string | null;
+  agreed_cost: number;
+  invoiced: number;
+  /** agreed_cost - invoiced; negative when over-billed. */
+  remaining: number;
+  /** "Not invoiced", "Partly invoiced", "Fully invoiced" or "Over-invoiced". */
+  invoice_status: string;
+  /** Released to the vendor against this code (after commission). */
+  paid: number;
+}
+
+/** A vendor bill and what is still owed on it: what an outward payment can pay. */
+export interface VendorPayable {
+  invoice_id: number;
+  invoice_number: string;
+  invoice_date: string;
+  project_id: number | null;
+  status: string;
+  /** Net payable less Optiminastic's commission. */
+  amount_payable: number;
+  /** On payouts raised and not rejected. */
+  committed: number;
+  /** On payouts released. */
+  paid: number;
+  /** amount_payable - committed */
+  due: number;
+  lines: { line_id: number | null; code: string | null; service_title: string | null; payable: number; committed: number; paid: number; due: number }[];
 }
 
 export const PROJECT_STATUSES = ["Not Started", "In Progress", "Report Due", "Completed", "On Hold"] as const;
 
-/** A vendor's share of a project, and the work order sent to them for it. */
+/** One service a vendor delivers on a project, under its permanent code. */
+export interface AssignedService {
+  id: number;
+  /** e.g. PRJ-0042-V01-S02; printed on the work order, quoted on the vendor's bills. */
+  code: string;
+  service_id: number;
+  service_title: string;
+  sac_code: string | null;
+  /** Before GST. */
+  agreed_cost: number;
+  /** Charged against this code on vendor bills, before GST. */
+  invoiced: number;
+  over_invoiced: boolean;
+}
+
+/** A vendor on a project: the services they deliver, and the work order sent to them. */
 export interface ProjectVendor {
   id: number;
   vendor_id: number;
@@ -542,8 +611,8 @@ export interface ProjectVendor {
   vendor_email: string;
   /** A group company: its name is withheld from everyone but the CFO and CEO. */
   is_group_company: boolean;
-  work_percent: number;
-  /** Before GST. */
+  services: AssignedService[];
+  /** The services' agreed costs together, before GST. */
   agreed_cost: number;
   /** Vendor invoices recorded against this project, before GST. */
   invoiced: number;
@@ -551,7 +620,7 @@ export interface ProjectVendor {
   work_order_number: string | null;
   work_order_date: string | null;
   work_order_sent_at: string | null;
-  /** Share or cost changed after the work order was issued: send it again. */
+  /** Services or costs changed after the work order was issued: send it again. */
   work_order_outdated: boolean;
 }
 
@@ -587,7 +656,6 @@ export interface Project {
   expected_report_date: string | null;
   status: string;
   vendors: ProjectVendor[];
-  work_percent_assigned: number;
   committed_cost: number;
   invoiced_cost: number;
   remaining_budget: number;
@@ -601,7 +669,20 @@ export interface Project {
   over_contract: boolean;
   /** Billed minus what vendors have invoiced. */
   margin: number;
+  /** Per service the project bills: client billing against vendor cost. */
+  service_margins: ServiceMargin[];
   created_at: string;
+}
+
+export interface ServiceMargin {
+  service_id: number;
+  service_title: string;
+  /** Client invoice lines for this service, before GST. */
+  billed: number;
+  vendor_committed: number;
+  vendor_invoiced: number;
+  /** billed - vendor_invoiced */
+  margin: number;
 }
 
 export interface ProjectDetail extends Project {
@@ -650,7 +731,16 @@ export interface VendorInvoice {
   tds_rate: number;
   tds_amount: number;
   net_payable: number;
+  /** Optiminastic's commission on this bill, a percentage of the amount before GST. */
+  commission_rate: number;
+  commission_amount: number;
+  /** What the vendor is paid: net payable less the commission. */
+  amount_payable: number;
+  /** The vendor's own invoice file, when uploaded. */
+  document_name: string | null;
   status: string;
+  /** What the bill charges per project service code. Empty only on bills from before per-service assignment. */
+  lines: { id: number; assignment_id: number; code: string; service_title: string; amount: number }[];
 }
 
 /** TDS we deduct from vendor bills, by section. Mirrors TDS_SECTIONS in the backend. */
@@ -677,6 +767,12 @@ export interface Approval {
   payee_name: string;
   amount: number;
   purpose?: string | null;
+  /** The vendor bill this payout settles, when raised against one. */
+  vendor_invoice_id?: number | null;
+  /** The vendor paid, for payouts raised against vendor bills. */
+  vendor_id?: number | null;
+  /** How a vendor payout is split over its bills and their UPS codes. */
+  allocations?: { vendor_invoice_id: number; invoice_number: string; line_id: number | null; code: string | null; amount: number }[];
   tax_deductions: number;
   net_payable: number;
   bank_details?: string | null;

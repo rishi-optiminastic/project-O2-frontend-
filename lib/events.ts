@@ -10,6 +10,7 @@ import { useEffect } from "react";
 export const PORTAL_EVENTS = {
   receiptRecorded: "o2:receipt-recorded",
   paymentRequested: "o2:payment-requested",
+  vendorInvoiceRecorded: "o2:vendor-invoice-recorded",
 } as const;
 
 type PortalEvent = (typeof PORTAL_EVENTS)[keyof typeof PORTAL_EVENTS];
