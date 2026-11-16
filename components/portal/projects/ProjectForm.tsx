@@ -1,14 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Check } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Select } from "@/components/portal/Select";
 import { Field, inputClass } from "@/components/portal/ui";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { formatDate } from "@/lib/utils";
-import { api, ApiError, type Client, type ProjectDetail, type ProjectService, type Service } from "@/lib/api";
+import { api, ApiError, type Client, type ProjectDetail, type ProjectService, type Service, type Vendor } from "@/lib/api";
 import { indiaToday, NUMBER_RULES } from "@/lib/validation";
 
 /** Reports are due on this day of the month after the project starts. */
@@ -42,9 +42,14 @@ function reportDueDate(month: string): string {
 
 const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
 
+/** A vendor assigned while creating the project: one service, one vendor, the agreed cost. */
+type VendorRow = { key: number; serviceId: string; vendorId: string; cost: string };
+let vendorRowKey = 0;
+
 /**
  * Create or edit a project: who it is for, the services it bills, the agreed fee and
- * the start month. Vendors and their work orders are set from the project page.
+ * the start month. A new project can also be given its vendors, service by service
+ * (each mapping gets a UPS code on save); afterwards vendors are managed from the project page.
  */
 export function ProjectForm({
   open,
@@ -63,6 +68,9 @@ export function ProjectForm({
   const { data: clients } = useApi<Client[]>(open ? "/clients" : null);
   const { data: services } = useApi<Service[]>(open ? "/services" : null);
   const [form, setForm] = useState<FormState>(() => initialState(project));
+  const isNew = !project;
+  const { data: vendors } = useApi<Vendor[]>(open && isNew ? "/vendors" : null);
+  const [vendorRows, setVendorRows] = useState<VendorRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -71,14 +79,26 @@ export function ProjectForm({
   }
 
   function toggleService(id: number) {
+    const removing = form.service_ids.includes(id);
     setForm((f) => ({
       ...f,
-      service_ids: f.service_ids.includes(id) ? f.service_ids.filter((s) => s !== id) : [...f.service_ids, id],
+      service_ids: removing ? f.service_ids.filter((s) => s !== id) : [...f.service_ids, id],
     }));
+    // A vendor row for a service no longer on the project goes with it.
+    if (removing) setVendorRows((rows) => rows.filter((r) => r.serviceId !== String(id)));
+  }
+
+  function updateVendorRow(key: number, change: Partial<VendorRow>) {
+    setVendorRows((rows) => rows.map((r) => (r.key === key ? { ...r, ...change } : r)));
   }
 
   const choices = serviceChoices(services, project);
   const chosen = choices.filter((s) => form.service_ids.includes(s.id));
+  const providers = (serviceId: string) => (vendors ?? []).filter((v) => v.services.some((s) => String(s.id) === serviceId));
+  const mappedRows = vendorRows.filter((r) => r.serviceId && r.vendorId);
+  const repeatedRow = mappedRows.find(
+    (r, i) => mappedRows.findIndex((x) => x.serviceId === r.serviceId && x.vendorId === r.vendorId) !== i,
+  );
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -90,14 +110,26 @@ export function ProjectForm({
       setError("Choose at least one service this project bills.");
       return;
     }
+    if (repeatedRow) {
+      setError("The same vendor is chosen twice for one service. Keep one row.");
+      return;
+    }
     setSaving(true);
     setError(null);
+    // One entry per vendor with every service it delivers on the project.
+    const byVendor = new Map<string, { service_id: number; agreed_cost: number }[]>();
+    for (const r of mappedRows) {
+      byVendor.set(r.vendorId, [...(byVendor.get(r.vendorId) ?? []), { service_id: Number(r.serviceId), agreed_cost: num(r.cost) }]);
+    }
     const body = {
       title: form.title,
       client_id: Number(form.client_id),
       service_ids: form.service_ids,
       contract_value: num(form.contract_value),
       start_date: form.start_month ? `${form.start_month}-01` : null,
+      ...(isNew && byVendor.size > 0
+        ? { vendors: [...byVendor].map(([vendor_id, services]) => ({ vendor_id: Number(vendor_id), services })) }
+        : {}),
     };
     try {
       const saved = project
@@ -187,6 +219,79 @@ export function ProjectForm({
             {form.start_month ? formatDate(reportDueDate(form.start_month)) : "-"}
           </p>
         </Field>
+
+        {isNew && (
+          <fieldset className="col-span-full flex flex-col gap-3">
+            <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Assign vendors</legend>
+            {vendorRows.map((r) => {
+              const options = r.serviceId ? providers(r.serviceId) : [];
+              return (
+                <div key={r.key} className="grid grid-cols-1 items-start gap-2 rounded-2xl border border-line p-3 sm:grid-cols-[1.2fr_1.2fr_0.8fr_auto]">
+                  <Select
+                    value={r.serviceId}
+                    onValueChange={(v) => updateVendorRow(r.key, { serviceId: v, vendorId: "" })}
+                    placeholder="Service"
+                    options={chosen.map((s) => ({ value: String(s.id), label: s.title }))}
+                  />
+                  <Select
+                    key={`${r.key}-${r.serviceId}`}
+                    value={r.vendorId}
+                    onValueChange={(v) => updateVendorRow(r.key, { vendorId: v })}
+                    placeholder={!r.serviceId ? "Choose a service first" : options.length ? "Vendor" : "No vendor provides this"}
+                    options={options.map((v) => ({ value: String(v.id), label: v.business_name }))}
+                  />
+                  <input
+                    {...NUMBER_RULES.money}
+                    required={!!(r.serviceId && r.vendorId)}
+                    value={r.cost}
+                    onChange={(e) => updateVendorRow(r.key, { cost: e.target.value })}
+                    placeholder="Agreed cost ₹"
+                    aria-label="Agreed cost in rupees"
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setVendorRows((rows) => rows.filter((x) => x.key !== r.key))}
+                    aria-label="Remove this vendor"
+                    className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              );
+            })}
+            <div className="flex flex-wrap items-center gap-3">
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                magnetic={false}
+                disabled={chosen.length === 0}
+                onClick={() =>
+                  setVendorRows((rows) => [
+                    ...rows,
+                    // Start on the first chosen service that has no vendor yet.
+                    {
+                      key: ++vendorRowKey,
+                      serviceId: String((chosen.find((s) => !rows.some((r) => r.serviceId === String(s.id))) ?? chosen[0])?.id ?? ""),
+                      vendorId: "",
+                      cost: "",
+                    },
+                  ])
+                }
+              >
+                <Plus className="h-4 w-4" /> Assign vendor
+              </Button>
+              <span className="text-xs text-ink-40">
+                {chosen.length === 0
+                  ? "Choose the services first."
+                  : mappedRows.length
+                    ? `${mappedRows.length} vendor mapping${mappedRows.length === 1 ? "" : "s"}; each gets a UPS code when the project is created.`
+                    : "Pick a vendor for each service, or do it later from the project."}
+              </span>
+            </div>
+          </fieldset>
+        )}
 
         {error && (
           <p role="alert" className="col-span-full text-sm text-danger">

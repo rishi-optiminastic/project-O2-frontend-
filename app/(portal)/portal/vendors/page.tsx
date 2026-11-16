@@ -284,7 +284,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
       >
         {done.codes.length > 0 && (
           <div className="overflow-x-auto rounded-2xl border border-line">
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full min-w-[520px] text-left text-sm">
               <thead>
                 <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
                   <th className="px-4 py-3 font-medium">UPS code</th>
@@ -372,11 +372,11 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
       {/* Assign the vendor to projects now, service by service; each becomes a UPS code. */}
       {canAssign && (
         <fieldset className="flex flex-col gap-3 sm:col-span-2">
-          <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Project assignments (optional)</legend>
+          <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Project assignments</legend>
           {rows.map((r) => {
             const p = project(r.projectId);
             return (
-              <div key={r.key} className="grid grid-cols-1 items-start gap-2 rounded-2xl border border-line p-3 sm:grid-cols-[1.2fr_1.2fr_0.8fr_auto]">
+              <div key={r.key} className="grid grid-cols-1 items-start gap-2 rounded-2xl border border-line p-3 sm:grid-cols-2">
                 <Select
                   value={r.projectId}
                   onValueChange={(v) => updateRow(r.key, { projectId: v, serviceId: "" })}
@@ -390,23 +390,25 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
                   placeholder={p ? "Service" : "Choose a project first"}
                   options={(p?.services ?? []).map((s) => ({ value: String(s.id), label: s.title }))}
                 />
-                <input
-                  {...NUMBER_RULES.money}
-                  required={!!(r.projectId && r.serviceId)}
-                  value={r.cost}
-                  onChange={(e) => updateRow(r.key, { cost: e.target.value })}
-                  placeholder="Agreed cost ₹"
-                  aria-label="Agreed cost in rupees"
-                  className={inputClass}
-                />
-                <button
-                  type="button"
-                  onClick={() => setRows((all) => all.filter((x) => x.key !== r.key))}
-                  aria-label="Remove this assignment"
-                  className="inline-flex h-11 w-11 items-center justify-center rounded-xl text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <div className="flex gap-2 sm:col-span-2">
+                  <input
+                    {...NUMBER_RULES.money}
+                    required={!!(r.projectId && r.serviceId)}
+                    value={r.cost}
+                    onChange={(e) => updateRow(r.key, { cost: e.target.value })}
+                    placeholder="Agreed cost ₹"
+                    aria-label="Agreed cost in rupees"
+                    className={inputClass}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRows((all) => all.filter((x) => x.key !== r.key))}
+                    aria-label="Remove this assignment"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -444,7 +446,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
       {bill && (
         <fieldset className="flex flex-col gap-3 rounded-2xl border border-line p-4 sm:col-span-2">
           <legend className="px-1 text-xs tracking-eyebrow text-secondary">Upload invoice</legend>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Invoice number">
               <input value={bill.number} onChange={(e) => updateBill({ number: e.target.value })} {...FIELD_RULES.invoiceNumber} className={inputClass} />
             </Field>
@@ -490,7 +492,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
           </div>
           {billRows.length > 0 && (
             <div className="overflow-x-auto rounded-xl border border-line">
-              <table className="w-full min-w-[480px] text-left text-sm">
+              <table className="w-full min-w-[440px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
                     <th className="px-3 py-2 font-medium">Map (UPS code)</th>
@@ -538,7 +540,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
     <Modal
       open={open}
       onOpenChange={close}
-      size="wide"
+      // Standard width: the form reads top to bottom rather than spreading sideways.
       title="Onboard a vendor"
       description="Enter the GSTIN to fill the name and address. Everything is required except the COI and MSME number."
     >
