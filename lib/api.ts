@@ -738,6 +738,10 @@ export interface VendorInvoice {
   amount_payable: number;
   /** The vendor's own invoice file, when uploaded. */
   document_name: string | null;
+  /** The supplier as printed on the bill (GSTIN is vendor_gstin). */
+  supplier_name?: string | null;
+  supplier_address?: string | null;
+  supplier_coi?: string | null;
   status: string;
   /** What the bill charges per project service code. Empty only on bills from before per-service assignment. */
   lines: { id: number; assignment_id: number; code: string; service_title: string; amount: number }[];
