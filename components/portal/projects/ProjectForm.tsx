@@ -223,7 +223,7 @@ export function ProjectForm({
             Cancel
           </Button>
           <Button type="submit" magnetic={false} disabled={saving}>
-            {saving ? "Saving…" : project ? "Save changes" : stacked ? "Create project" : "Create project → assign vendors"}
+            {saving ? "Saving…" : project ? "Save changes" : "Create project"}
           </Button>
         </ModalFooter>
       </form>

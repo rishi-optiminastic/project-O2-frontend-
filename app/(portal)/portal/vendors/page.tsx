@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, BadgeCheck, Building2, FileUp, FolderPlus, X } from "lucide-react";
+import { Plus, BadgeCheck, Building2, Check, FileUp, FolderPlus, X } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import { PageHeading, Table, Row, Cell, Empty, StatusPill, Field, inputClass } from "@/components/portal/ui";
 import { Select } from "@/components/portal/Select";
@@ -113,10 +113,10 @@ export default function VendorsPage() {
   );
 }
 
-/** A project assignment added while onboarding: one service on one project, at an agreed cost. */
+/** A project assignment made in step 2 of onboarding: one service on one project, at an agreed cost. */
 type AssignRow = { key: number; projectId: string; serviceId: string; cost: string };
 
-/** The vendor's first bill, uploaded while onboarding and mapped to the assignments above. */
+/** The vendor's first bill, uploaded in step 2 and mapped to the assignments there. */
 type BillDraft = {
   number: string;
   date: string;
@@ -138,32 +138,28 @@ type Done = {
 
 let rowKey = 0;
 
+/**
+ * Onboard a vendor in two steps, in one dialog.
+ *
+ * 1. Vendor details: the onboarding fields, the services it provides and its bank accounts.
+ *    Saving creates the vendor.
+ * 2. Project assignments and upload invoice: assign the vendor to project services (each
+ *    gets a UPS code) and record its first invoice mapped to those codes. It can be skipped.
+ */
 function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChange: (v: boolean) => void; onSaved: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const { hasRole } = useAuth();
   const canAssign = hasRole("ADMIN_CEO", "CFO", "FINANCE_MANAGER");
   const { data: catalogue } = useApi<Service[]>(open ? "/services" : null);
-  const { data: projects } = useApi<Project[]>(open && canAssign ? "/projects" : null);
   const [serviceIds, setServiceIds] = useState<number[]>([]);
-  const [rows, setRows] = useState<AssignRow[]>([]);
-  const [bill, setBill] = useState<BillDraft | null>(null);
+  // Step 2: the vendor just created.
+  const [created, setCreated] = useState<Vendor | null>(null);
   const [done, setDone] = useState<Done | null>(null);
-
-  const project = (id: string) => projects?.find((p) => String(p.id) === id);
-  const serviceName = (id: string) => catalogue?.find((s) => String(s.id) === id)?.title ?? "Service";
-  const filled = rows.filter((r) => r.projectId && r.serviceId);
-  const repeated = filled.find((r, i) => filled.findIndex((x) => x.projectId === r.projectId && x.serviceId === r.serviceId) !== i);
-  // A bill covers one project: the projects that have assignments in this form.
-  const billProjects = [...new Set(filled.map((r) => r.projectId))];
-  const billProject = bill ? bill.projectId || (billProjects.length === 1 ? billProjects[0] : "") : "";
-  const billRows = filled.filter((r) => r.projectId === billProject);
-  const billTotal = billRows.reduce((s, r) => s + Number(bill?.amounts[r.key] || 0), 0);
 
   function reset() {
     setServiceIds([]);
-    setRows([]);
-    setBill(null);
+    setCreated(null);
     setDone(null);
     setError(null);
   }
@@ -174,6 +170,108 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
   function toggleService(id: number) {
     setServiceIds((all) => (all.includes(id) ? all.filter((x) => x !== id) : [...all, id]));
   }
+
+  async function saveVendor(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    try {
+      const vendor = await api.post<Vendor>("/vendors", { ...vendorPayload(e.currentTarget), service_ids: serviceIds });
+      onSaved();
+      // Only those who can assign vendors to projects go on to step 2.
+      if (canAssign) setCreated(vendor);
+      else close(false);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const step = done ? 3 : created ? 2 : 1;
+  const title = done ? `${done.vendor.business_name} onboarded` : created ? `${created.business_name} · project assignments` : "Onboard a vendor";
+  const description = done
+    ? "The vendor is saved. Each assignment has its UPS code, printed on the work order and quoted on the vendor's bills."
+    : created
+      ? "Step 2 of 2: assign the vendor to project services (each gets a UPS code) and upload its invoice, mapped to those codes."
+      : `${canAssign ? "Step 1 of 2: " : ""}Enter the GSTIN to fill the name and address. Everything is required except the COI and MSME number.`;
+
+  return (
+    <Modal open={open} onOpenChange={close} size={done ? "wide" : undefined} title={title} description={description}>
+      {canAssign && !done && <OnboardSteps step={step === 1 ? 1 : 2} />}
+      {done ? (
+        <DoneSummary done={done} onClose={() => close(false)} />
+      ) : created ? (
+        <AssignmentsStep vendor={created} onDone={setDone} onSkip={() => close(false)} />
+      ) : (
+        <form onSubmit={saveVendor} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <VendorFields
+            beforeBankAccounts={
+              // The services the vendor provides: projects can assign it only for these.
+              <fieldset className="flex flex-col gap-2 sm:col-span-2">
+                <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Services provided</legend>
+                {catalogue && catalogue.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {catalogue.map((s) => {
+                      const on = serviceIds.includes(s.id);
+                      return (
+                        <button
+                          key={s.id}
+                          type="button"
+                          aria-pressed={on}
+                          onClick={() => toggleService(s.id)}
+                          className={
+                            "rounded-full border px-3 py-1.5 text-xs transition-colors " +
+                            (on ? "border-foreground bg-foreground text-background" : "border-line text-secondary hover:text-foreground")
+                          }
+                        >
+                          {s.title}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-ink-40">{catalogue ? "No services in the catalogue yet." : "Loading services…"}</p>
+                )}
+              </fieldset>
+            }
+          />
+
+          {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
+          <ModalFooter>
+            <Button type="button" variant="secondary" magnetic={false} onClick={() => close(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" magnetic={false} disabled={saving}>
+              {saving ? "Saving…" : canAssign ? "Next" : "Save vendor"}
+            </Button>
+          </ModalFooter>
+        </form>
+      )}
+    </Modal>
+  );
+}
+
+/** Step 2: project assignments (each a UPS code) and the vendor's invoice mapped to them. */
+function AssignmentsStep({ vendor, onDone, onSkip }: { vendor: Vendor; onDone: (done: Done) => void; onSkip: () => void }) {
+  const { data: projects } = useApi<Project[]>("/projects");
+  const { data: catalogue } = useApi<Service[]>("/services");
+  const [rows, setRows] = useState<AssignRow[]>(() => [{ key: ++rowKey, projectId: "", serviceId: "", cost: "" }]);
+  const [bill, setBill] = useState<BillDraft | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const project = (id: string) => projects?.find((p) => String(p.id) === id);
+  const serviceName = (id: string) => catalogue?.find((s) => String(s.id) === id)?.title ?? "Service";
+  const provides = (id: string) => vendor.services.some((s) => String(s.id) === id);
+  const filled = rows.filter((r) => r.projectId && r.serviceId);
+  const repeated = filled.find((r, i) => filled.findIndex((x) => x.projectId === r.projectId && x.serviceId === r.serviceId) !== i);
+  // A bill covers one project: the projects that have assignments here.
+  const billProjects = [...new Set(filled.map((r) => r.projectId))];
+  const billProject = bill ? bill.projectId || (billProjects.length === 1 ? billProjects[0] : "") : "";
+  const billRows = filled.filter((r) => r.projectId === billProject);
+  const billTotal = billRows.reduce((s, r) => s + Number(bill?.amounts[r.key] || 0), 0);
+
   function updateRow(key: number, change: Partial<AssignRow>) {
     setRows((all) => all.map((r) => (r.key === key ? { ...r, ...change } : r)));
   }
@@ -182,6 +280,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
   }
 
   function problem(): string | null {
+    if (filled.length === 0) return "Assign the vendor to at least one project service, or skip this step.";
     if (repeated) return "The same service on the same project is listed twice. Keep one.";
     if (bill) {
       if (!bill.number.trim()) return "Enter the invoice number of the uploaded invoice.";
@@ -200,27 +299,23 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
     }
     setSaving(true);
     setError(null);
+    const result: Done = { vendor, codes: [], bill: null, failed: [] };
+
     // A service the vendor is assigned is one it provides.
-    const provided = [...new Set([...serviceIds, ...filled.map((r) => Number(r.serviceId))])];
-    let vendor: Vendor;
-    try {
-      vendor = await api.post<Vendor>("/vendors", { ...vendorPayload(e.currentTarget), service_ids: provided });
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save");
-      setSaving(false);
-      return;
-    }
-    onSaved();
-    if (filled.length === 0) {
-      setSaving(false);
-      close(false);
-      return;
+    const missing = [...new Set(filled.map((r) => r.serviceId).filter((id) => !provides(id)))];
+    if (missing.length) {
+      try {
+        await api.put(`/vendors/${vendor.id}/services`, { service_ids: [...vendor.services.map((s) => s.id), ...missing.map(Number)] });
+      } catch (err) {
+        setError(err instanceof ApiError ? err.message : "Could not add the services to the vendor");
+        setSaving(false);
+        return;
+      }
     }
 
     // One call per project, with every service the vendor delivers there.
-    const result: Done = { vendor, codes: [], bill: null, failed: [] };
-    const assignmentId = new Map<number, number>(); // form row key -> UPS code id
-    for (const projectId of [...new Set(filled.map((r) => r.projectId))]) {
+    const assignmentId = new Map<number, number>(); // row key -> UPS code id
+    for (const projectId of billProjects) {
       const mine = filled.filter((r) => r.projectId === projectId);
       try {
         const saved = await api.put<ProjectDetail>(`/projects/${projectId}/vendors/${vendor.id}`, {
@@ -270,181 +365,85 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
       }
     }
     setSaving(false);
-    setDone(result);
+    onDone(result);
   }
 
-  if (done) {
-    return (
-      <Modal
-        open={open}
-        onOpenChange={close}
-        size="wide"
-        title={`${done.vendor.business_name} onboarded`}
-        description="The vendor is saved and assigned. Each assignment has its UPS code, printed on the work order and quoted on the vendor's bills."
-      >
-        {done.codes.length > 0 && (
-          <div className="overflow-x-auto rounded-2xl border border-line">
-            <table className="w-full min-w-[520px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
-                  <th className="px-4 py-3 font-medium">UPS code</th>
-                  <th className="px-4 py-3 font-medium">Project</th>
-                  <th className="px-4 py-3 font-medium">Service</th>
-                  <th className="px-4 py-3 text-right font-medium">Agreed cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {done.codes.map((c) => (
-                  <tr key={c.code} className="border-b border-line/60 last:border-0">
-                    <td className="px-4 py-2.5 font-mono text-xs font-medium">{c.code}</td>
-                    <td className="px-4 py-2.5">{c.project}</td>
-                    <td className="px-4 py-2.5 text-secondary">{c.service}</td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">{formatINR(c.cost)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {done.bill && (
-          <p className="mt-4 rounded-2xl border border-line bg-mist/50 p-4 text-sm text-secondary">
-            Invoice <span className="font-medium text-foreground">{done.bill.number}</span> recorded: {formatINR(done.bill.amount)} before GST,
-            commission {formatINR(done.bill.commission)}, paid to vendor{" "}
-            <span className="font-medium text-foreground">{formatINR(done.bill.payable)}</span>
-            {done.bill.file ? " · file attached." : "."}
-          </p>
-        )}
-        {done.failed.length > 0 && (
-          <div role="alert" className="mt-4 rounded-2xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
-            <p className="font-medium">The vendor is saved, but not everything went through:</p>
-            <ul className="mt-1 list-disc pl-5">
-              {done.failed.map((f) => (
-                <li key={f}>{f}</li>
-              ))}
-            </ul>
-            <p className="mt-1">Finish it from the vendor&apos;s page (Jobs, Upload invoice).</p>
-          </div>
-        )}
-        <ModalFooter>
-          <Button type="button" variant="secondary" magnetic={false} onClick={() => close(false)}>
-            Close
-          </Button>
-          <Link href={`/portal/vendors/${done.vendor.id}`} className="inline-flex">
-            <Button type="button" magnetic={false}>
-              Open vendor
-            </Button>
-          </Link>
-        </ModalFooter>
-      </Modal>
-    );
-  }
-
-  const servicesAndProjects = (
-    <>
-      {/* The services the vendor provides: projects can assign it only for these. */}
-      <fieldset className="flex flex-col gap-2 sm:col-span-2">
-        <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Services provided</legend>
-        {catalogue && catalogue.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {catalogue.map((s) => {
-              const on = serviceIds.includes(s.id) || filled.some((r) => Number(r.serviceId) === s.id);
-              return (
+  return (
+    <form onSubmit={onSubmit} className="flex flex-col gap-5">
+      {/* Project assignments: each becomes a UPS code. */}
+      <fieldset className="flex flex-col gap-3">
+        <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Project assignments</legend>
+        {rows.map((r) => {
+          const p = project(r.projectId);
+          return (
+            <div key={r.key} className="grid grid-cols-1 items-start gap-2 rounded-2xl border border-line p-3 sm:grid-cols-2">
+              <Select
+                value={r.projectId}
+                onValueChange={(v) => updateRow(r.key, { projectId: v, serviceId: "" })}
+                placeholder={projects ? (projects.length ? "Project" : "No projects yet") : "Loading projects…"}
+                options={(projects ?? []).map((x) => ({ value: String(x.id), label: `${x.code} ${x.title}` }))}
+              />
+              <Select
+                key={`${r.key}-${r.projectId}`}
+                value={r.serviceId}
+                onValueChange={(v) => updateRow(r.key, { serviceId: v })}
+                placeholder={p ? "Service" : "Choose a project first"}
+                options={(p?.services ?? []).map((s) => ({ value: String(s.id), label: s.title }))}
+              />
+              <div className="flex gap-2 sm:col-span-2">
+                <input
+                  {...NUMBER_RULES.money}
+                  required={!!(r.projectId && r.serviceId)}
+                  value={r.cost}
+                  onChange={(e) => updateRow(r.key, { cost: e.target.value })}
+                  placeholder="Agreed cost ₹"
+                  aria-label="Agreed cost in rupees"
+                  className={inputClass}
+                />
                 <button
-                  key={s.id}
                   type="button"
-                  aria-pressed={on}
-                  onClick={() => toggleService(s.id)}
-                  className={
-                    "rounded-full border px-3 py-1.5 text-xs transition-colors " +
-                    (on ? "border-foreground bg-foreground text-background" : "border-line text-secondary hover:text-foreground")
-                  }
+                  onClick={() => setRows((all) => all.filter((x) => x.key !== r.key))}
+                  aria-label="Remove this assignment"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
                 >
-                  {s.title}
+                  <X className="h-4 w-4" />
                 </button>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-xs text-ink-40">{catalogue ? "No services in the catalogue yet." : "Loading services…"}</p>
-        )}
-      </fieldset>
-
-      {/* Assign the vendor to projects now, service by service; each becomes a UPS code. */}
-      {canAssign && (
-        <fieldset className="flex flex-col gap-3 sm:col-span-2">
-          <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Project assignments</legend>
-          {rows.map((r) => {
-            const p = project(r.projectId);
-            return (
-              <div key={r.key} className="grid grid-cols-1 items-start gap-2 rounded-2xl border border-line p-3 sm:grid-cols-2">
-                <Select
-                  value={r.projectId}
-                  onValueChange={(v) => updateRow(r.key, { projectId: v, serviceId: "" })}
-                  placeholder="Project"
-                  options={(projects ?? []).map((x) => ({ value: String(x.id), label: `${x.code} ${x.title}` }))}
-                />
-                <Select
-                  key={`${r.key}-${r.projectId}`}
-                  value={r.serviceId}
-                  onValueChange={(v) => updateRow(r.key, { serviceId: v })}
-                  placeholder={p ? "Service" : "Choose a project first"}
-                  options={(p?.services ?? []).map((s) => ({ value: String(s.id), label: s.title }))}
-                />
-                <div className="flex gap-2 sm:col-span-2">
-                  <input
-                    {...NUMBER_RULES.money}
-                    required={!!(r.projectId && r.serviceId)}
-                    value={r.cost}
-                    onChange={(e) => updateRow(r.key, { cost: e.target.value })}
-                    placeholder="Agreed cost ₹"
-                    aria-label="Agreed cost in rupees"
-                    className={inputClass}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setRows((all) => all.filter((x) => x.key !== r.key))}
-                    aria-label="Remove this assignment"
-                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-ink-40 transition-colors hover:bg-mist hover:text-foreground"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
               </div>
-            );
-          })}
-          <div className="flex flex-wrap items-center gap-2">
+              {r.serviceId && !provides(r.serviceId) && (
+                <p className="text-xs text-ink-40 sm:col-span-2">{serviceName(r.serviceId)} is added to the vendor&apos;s services.</p>
+              )}
+            </div>
+          );
+        })}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            magnetic={false}
+            onClick={() => setRows((all) => [...all, { key: ++rowKey, projectId: "", serviceId: "", cost: "" }])}
+          >
+            <FolderPlus className="h-4 w-4" /> Assign to project
+          </Button>
+          {!bill && (
             <Button
               type="button"
               size="sm"
               variant="secondary"
               magnetic={false}
-              onClick={() => setRows((all) => [...all, { key: ++rowKey, projectId: "", serviceId: "", cost: "" }])}
-              disabled={projects?.length === 0}
-            >
-              <FolderPlus className="h-4 w-4" /> Assign to project
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              magnetic={false}
-              disabled={filled.length === 0 || bill !== null}
+              disabled={filled.length === 0}
               title={filled.length === 0 ? "Assign the vendor to a project first, so the invoice can be mapped to its UPS codes" : undefined}
               onClick={() => setBill({ number: "", date: indiaToday(), projectId: "", gstRate: "18", rate: "", file: null, amounts: {} })}
             >
               <FileUp className="h-4 w-4" /> Upload invoice
             </Button>
-            {projects?.length === 0 && <span className="text-xs text-ink-40">No projects yet.</span>}
-          </div>
-          {filled.length > 0 && !bill && (
-            <p className="text-xs text-ink-40">Each assignment gets a UPS code when you save. Upload the vendor&apos;s invoice to map it to these codes.</p>
           )}
-        </fieldset>
-      )}
+        </div>
+      </fieldset>
 
       {/* The vendor's invoice, mapped to the UPS codes of the assignments above. */}
       {bill && (
-        <fieldset className="flex flex-col gap-3 rounded-2xl border border-line p-4 sm:col-span-2">
+        <fieldset className="flex flex-col gap-3 rounded-2xl border border-line p-4">
           <legend className="px-1 text-xs tracking-eyebrow text-secondary">Upload invoice</legend>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="Invoice number">
@@ -464,13 +463,11 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
                 step="0.01"
                 value={bill.rate}
                 onChange={(e) => updateBill({ rate: e.target.value })}
-                placeholder="Vendor's rate"
-                title="Optiminastic's commission on this bill. Left empty, the percentage (rate) set above."
+                placeholder={`Vendor's rate (${vendor.commission_rate}%)`}
+                title="Optiminastic's commission on this bill. Left empty, the vendor's percentage (rate)."
                 className={inputClass}
               />
             </Field>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {billProjects.length > 1 && (
               <Field label="Project on this invoice">
                 <Select
@@ -497,7 +494,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
                   <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
                     <th className="px-3 py-2 font-medium">Map (UPS code)</th>
                     <th className="px-3 py-2 font-medium">Agreed</th>
-                    <th className="w-44 px-3 py-2 font-medium">Billed (₹, before GST)</th>
+                    <th className="w-40 px-3 py-2 font-medium">Billed (₹, before GST)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -505,7 +502,7 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
                     <tr key={r.key} className="border-b border-line/60 last:border-0">
                       <td className="px-3 py-2">
                         <span className="font-medium">{serviceName(r.serviceId)}</span>
-                        <span className="block text-xs text-ink-40">{project(r.projectId)?.code}-V··-S·· · UPS code generated on save</span>
+                        <span className="block text-xs text-ink-40">UPS code generated on save</span>
                       </td>
                       <td className="px-3 py-2 tabular-nums text-secondary">{formatINR(Number(r.cost || 0))}</td>
                       <td className="px-3 py-2">
@@ -524,39 +521,112 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
             </div>
           )}
           <div className="flex items-center justify-between gap-3 text-xs text-ink-40">
-            <span>
-              Invoice amount {formatINR(billTotal)} before GST. TDS follows the vendor&apos;s TDS section; the commission is kept back from the payout.
-            </span>
+            <span>Invoice amount {formatINR(billTotal)} before GST. TDS follows the vendor&apos;s TDS section; the commission is kept back from the payout.</span>
             <button type="button" onClick={() => setBill(null)} className="shrink-0 underline hover:text-foreground">
               Remove invoice
             </button>
           </div>
         </fieldset>
       )}
-    </>
+
+      {error && <p className="text-sm text-danger">⚠ {error}</p>}
+      <ModalFooter>
+        <Button type="button" variant="secondary" magnetic={false} onClick={onSkip}>
+          Skip for now
+        </Button>
+        <Button type="submit" magnetic={false} disabled={saving || !!repeated}>
+          {saving ? "Saving…" : bill ? "Save assignments and invoice" : "Save assignments"}
+        </Button>
+      </ModalFooter>
+    </form>
   );
+}
 
+/** After step 2: the UPS codes generated and the invoice recorded. */
+function DoneSummary({ done, onClose }: { done: Done; onClose: () => void }) {
   return (
-    <Modal
-      open={open}
-      onOpenChange={close}
-      // Standard width: the form reads top to bottom rather than spreading sideways.
-      title="Onboard a vendor"
-      description="Enter the GSTIN to fill the name and address. Everything is required except the COI and MSME number."
-    >
-      <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <VendorFields beforeBankAccounts={servicesAndProjects} />
+    <div className="flex flex-col gap-4">
+      {done.codes.length > 0 && (
+        <div className="overflow-x-auto rounded-2xl border border-line">
+          <table className="w-full min-w-[520px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
+                <th className="px-4 py-3 font-medium">UPS code</th>
+                <th className="px-4 py-3 font-medium">Project</th>
+                <th className="px-4 py-3 font-medium">Service</th>
+                <th className="px-4 py-3 text-right font-medium">Agreed cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {done.codes.map((c) => (
+                <tr key={c.code} className="border-b border-line/60 last:border-0">
+                  <td className="px-4 py-2.5 font-mono text-xs font-medium">{c.code}</td>
+                  <td className="px-4 py-2.5">{c.project}</td>
+                  <td className="px-4 py-2.5 text-secondary">{c.service}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{formatINR(c.cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {done.bill && (
+        <p className="rounded-2xl border border-line bg-mist/50 p-4 text-sm text-secondary">
+          Invoice <span className="font-medium text-foreground">{done.bill.number}</span> recorded: {formatINR(done.bill.amount)} before GST,
+          commission {formatINR(done.bill.commission)}, paid to vendor <span className="font-medium text-foreground">{formatINR(done.bill.payable)}</span>
+          {done.bill.file ? " · file attached." : "."}
+        </p>
+      )}
+      {done.failed.length > 0 && (
+        <div role="alert" className="rounded-2xl border border-danger/30 bg-danger-soft p-4 text-sm text-danger">
+          <p className="font-medium">The vendor is saved, but not everything went through:</p>
+          <ul className="mt-1 list-disc pl-5">
+            {done.failed.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+          <p className="mt-1">Finish it from the vendor&apos;s page (Jobs, Upload invoice).</p>
+        </div>
+      )}
+      <ModalFooter>
+        <Button type="button" variant="secondary" magnetic={false} onClick={onClose}>
+          Close
+        </Button>
+        <Link href={`/portal/vendors/${done.vendor.id}`} className="inline-flex">
+          <Button type="button" magnetic={false}>
+            Open vendor
+          </Button>
+        </Link>
+      </ModalFooter>
+    </div>
+  );
+}
 
-        {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
-        <ModalFooter>
-          <Button type="button" variant="secondary" magnetic={false} onClick={() => close(false)}>
-            Cancel
-          </Button>
-          <Button type="submit" magnetic={false} disabled={saving || !!repeated}>
-            {saving ? "Saving…" : bill ? "Save, assign and record invoice" : filled.length ? "Save and assign" : "Save vendor"}
-          </Button>
-        </ModalFooter>
-      </form>
-    </Modal>
+/** Where the user is in onboarding: vendor details, then project assignments and invoice. */
+function OnboardSteps({ step }: { step: 1 | 2 }) {
+  const items = ["Vendor details", "Project assignments & invoice"];
+  return (
+    <ol className="mb-5 flex flex-wrap items-center gap-3 text-xs">
+      {items.map((label, i) => {
+        const n = i + 1;
+        const state = n < step ? "done" : n === step ? "current" : "next";
+        return (
+          <li key={label} className="flex items-center gap-3">
+            {i > 0 && <span className="h-px w-8 bg-line" aria-hidden />}
+            <span className={"flex items-center gap-2 " + (state === "next" ? "text-ink-40" : "text-foreground")}>
+              <span
+                className={
+                  "flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-medium " +
+                  (state === "done" ? "bg-success text-white" : state === "current" ? "bg-foreground text-background" : "border border-line")
+                }
+              >
+                {state === "done" ? <Check className="h-3.5 w-3.5" /> : n}
+              </span>
+              <span className={state === "current" ? "font-medium" : ""}>{label}</span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
