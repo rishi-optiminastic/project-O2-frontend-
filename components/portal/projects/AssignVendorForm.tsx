@@ -54,12 +54,11 @@ function rowsFrom(project: ProjectDetail, canEditGroup: boolean): MapRow[] {
   return rows.sort((a, b) => (order.get(a.service_id) ?? 0) - (order.get(b.service_id) ?? 0));
 }
 
-/**
- * Map vendors to the project's services. Every service the project bills is listed with a
- * vendor dropdown (only vendors that provide that service) and the cost agreed with them.
- * A service can have more than one vendor. Saving generates a permanent UPS code (unique
- * project service code, e.g. PRJ-0042-V01-S02) for every new mapping; existing ones keep theirs.
- */
+const TITLE = "Assign vendors to services";
+const DESCRIPTION =
+  "For each service on this project, choose the vendor who delivers it and the cost agreed with them. Each mapping gets its own UPS code (unique project service code).";
+
+/** The Assign vendors dialog on a project's page. */
 export function AssignVendorForm({
   open,
   onOpenChange,
@@ -71,9 +70,36 @@ export function AssignVendorForm({
   project: ProjectDetail;
   onSaved: (saved: ProjectDetail) => void;
 }) {
+  return (
+    <Modal open={open} onOpenChange={onOpenChange} size="wide" title={TITLE} description={DESCRIPTION}>
+      {open && <AssignVendorsPanel project={project} onSaved={onSaved} onClose={() => onOpenChange(false)} />}
+    </Modal>
+  );
+}
+
+/**
+ * Map vendors to the project's services. Every service the project bills is listed with a
+ * vendor dropdown (only vendors that provide that service) and the cost agreed with them.
+ * A service can have more than one vendor. Saving generates a permanent UPS code (unique
+ * project service code, e.g. PRJ-0042-V01-S02) for every new mapping; existing ones keep theirs.
+ *
+ * The contents of the Assign vendors dialog, and step 2 of the New project form.
+ */
+export function AssignVendorsPanel({
+  project,
+  onSaved,
+  onClose,
+  cancelLabel = "Cancel",
+}: {
+  project: ProjectDetail;
+  onSaved: (saved: ProjectDetail) => void;
+  /** Leaves the panel: Cancel / Skip before saving, Done after. */
+  onClose: () => void;
+  cancelLabel?: string;
+}) {
   const { hasRole } = useAuth();
   const canEditGroup = hasRole(...GROUP_COMPANY_ROLES);
-  const { data: vendors } = useApi<Vendor[]>(open ? "/vendors" : null);
+  const { data: vendors } = useApi<Vendor[]>("/vendors");
   const [rows, setRows] = useState<MapRow[]>(() => rowsFrom(project, canEditGroup));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -137,7 +163,18 @@ export function AssignVendorForm({
     const before = new Set(project.vendors.flatMap((v) => v.services.map((s) => s.code)));
     const codes = done.vendors.flatMap((v) => v.services.map((s) => ({ ...s, vendor: v.vendor_name })));
     return (
-      <Modal open={open} onOpenChange={onOpenChange} size="wide" title="Vendors mapped" description="Each mapping has its UPS code. It is printed on the vendor's work order and quoted on their bills.">
+      <div className="flex flex-col gap-4">
+        <div>
+          <p className="flex items-center gap-2 text-sm font-medium text-success">
+            <CheckCircle2 className="h-4 w-4" /> Vendors mapped
+          </p>
+          <p className="mt-1 text-sm text-secondary">
+            {codes.length > 0
+              ? "Each mapping has its UPS code. It is printed on the vendor's work order and quoted on their bills."
+              : "No vendor is mapped yet. Assign vendors any time from the project page."}
+          </p>
+        </div>
+        {codes.length > 0 && (
         <div className="overflow-x-auto rounded-2xl border border-line">
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
@@ -163,23 +200,17 @@ export function AssignVendorForm({
             </tbody>
           </table>
         </div>
+        )}
         <ModalFooter>
-          <Button type="button" magnetic={false} onClick={() => onOpenChange(false)}>
+          <Button type="button" magnetic={false} onClick={onClose}>
             <CheckCircle2 className="h-4 w-4" /> Done
           </Button>
         </ModalFooter>
-      </Modal>
+      </div>
     );
   }
 
   return (
-    <Modal
-      open={open}
-      onOpenChange={onOpenChange}
-      size="wide"
-      title="Assign vendors to services"
-      description="For each service on this project, choose the vendor who delivers it and the cost agreed with them. Each mapping gets its own UPS code (unique project service code)."
-    >
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <div className="overflow-x-auto rounded-2xl border border-line">
           <table className="w-full min-w-[760px] text-left text-sm">
@@ -291,14 +322,13 @@ export function AssignVendorForm({
           </p>
         )}
         <ModalFooter>
-          <Button type="button" variant="secondary" magnetic={false} onClick={() => onOpenChange(false)}>
-            Cancel
+          <Button type="button" variant="secondary" magnetic={false} onClick={onClose}>
+            {cancelLabel}
           </Button>
           <Button type="submit" magnetic={false} disabled={saving || !!duplicate}>
             {saving ? "Saving…" : "Save and generate UPS codes"}
           </Button>
         </ModalFooter>
       </form>
-    </Modal>
   );
 }

@@ -75,7 +75,7 @@ export default function ProjectsPage() {
       </div>
 
       {formOpen && (
-        <ProjectForm open={formOpen} onOpenChange={setFormOpen} onSaved={(p) => router.push(`/portal/projects/${p.id}${p.vendors.length ? "" : "?assign=1"}`)} />
+        <ProjectForm open={formOpen} onOpenChange={setFormOpen} onSaved={(p) => router.push(`/portal/projects/${p.id}`)} />
       )}
     </PortalShell>
   );
