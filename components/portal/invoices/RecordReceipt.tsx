@@ -12,12 +12,7 @@ import { emitPortalEvent, PORTAL_EVENTS } from "@/lib/events";
 import { api, ApiError, type Client, type CompanyBank, type Invoice } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { FIELD_RULES, NUMBER_RULES, indiaToday, pastDateRule } from "@/lib/validation";
-import {
-  RECEIPT_TOLERANCE, cashToClear, oldestFirst, serviceCount, splitEquallyByService, splitGst, splitOldestFirst, tdsStillExpected,
-} from "@/lib/receipts";
-
-/** How a receipt over several invoices is shared out before any share is edited by hand. */
-type SplitMode = "services" | "oldest";
+import { RECEIPT_TOLERANCE, cashToClear, oldestFirst, splitGst, splitOldestFirst, tdsStillExpected } from "@/lib/receipts";
 
 const CLOSED_STATUSES = ["Cancelled", "Fully Paid"];
 
@@ -154,8 +149,7 @@ function ReceiptForm({ invoices, onDone }: { invoices: Invoice[]; onDone: () => 
   const several = invoices.length > 1;
   const fullCash = paise(invoices.reduce((sum, inv) => sum + cashToClear(inv), 0));
   const [total, setTotal] = useState(amountText(fullCash));
-  const [mode, setMode] = useState<SplitMode>("services");
-  const [shares, setShares] = useState<Record<number, string>>(() => sharesFor(fullCash, invoices, "services"));
+  const [shares, setShares] = useState<Record<number, string>>(() => sharesFor(fullCash, invoices));
   const [gstInput, setGstInput] = useState("0");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -173,12 +167,7 @@ function ReceiptForm({ invoices, onDone }: { invoices: Invoice[]; onDone: () => 
 
   function changeTotal(value: string) {
     setTotal(value);
-    setShares(sharesFor(toNumber(value), invoices, mode));
-  }
-
-  function changeMode(next: SplitMode) {
-    setMode(next);
-    setShares(sharesFor(toNumber(total), invoices, next));
+    setShares(sharesFor(toNumber(value), invoices));
   }
 
   function changeShare(id: number, value: string) {
@@ -243,9 +232,7 @@ function ReceiptForm({ invoices, onDone }: { invoices: Invoice[]; onDone: () => 
           className={`${inputClass} tabular-nums`}
         />
       </Field>
-      {several && (
-        <SharesTable invoices={invoices} shares={shares} onChange={changeShare} unallocated={unallocated} mode={mode} onModeChange={changeMode} />
-      )}
+      {several && <SharesTable invoices={invoices} shares={shares} onChange={changeShare} unallocated={unallocated} />}
       <Field label="Bank name (received into)">
         {banks && banks.length === 0 ? (
           <p className="rounded-xl border border-dashed border-line px-3.5 py-3 text-sm text-secondary">
@@ -291,66 +278,34 @@ function ReceiptForm({ invoices, onDone }: { invoices: Invoice[]; onDone: () => 
   );
 }
 
-/** The receipt split equally across every service, or oldest invoice first, as text for the share inputs. */
-function sharesFor(total: number, invoices: Invoice[], mode: SplitMode): Record<number, string> {
-  const split = mode === "services" ? splitEquallyByService(total, invoices) : splitOldestFirst(total, invoices);
+/** The receipt split oldest invoice first, as text for the share inputs. */
+function sharesFor(total: number, invoices: Invoice[]): Record<number, string> {
+  const split = splitOldestFirst(total, invoices);
   return Object.fromEntries(invoices.map((inv) => [inv.id, amountText(split[inv.id] ?? 0)]));
 }
 
-const SPLIT_MODES: { key: SplitMode; label: string }[] = [
-  { key: "services", label: "Divide equally across all services" },
-  { key: "oldest", label: "Oldest invoice first" },
-];
-
-/** How much of the receipt goes to each invoice; filled by the chosen split and editable. */
+/** How much of the receipt goes to each invoice; filled oldest first and editable. */
 function SharesTable({
   invoices,
   shares,
   onChange,
   unallocated,
-  mode,
-  onModeChange,
 }: {
   invoices: Invoice[];
   shares: Record<number, string>;
   onChange: (id: number, value: string) => void;
   unallocated: number;
-  mode: SplitMode;
-  onModeChange: (mode: SplitMode) => void;
 }) {
-  const services = invoices.reduce((n, inv) => n + serviceCount(inv), 0);
   return (
     <fieldset className="col-span-full flex flex-col gap-2">
-      <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Split across the invoices (edit any share)</legend>
-      <div role="radiogroup" aria-label="How to split the receipt" className="flex flex-wrap gap-2">
-        {SPLIT_MODES.map((m) => (
-          <button
-            key={m.key}
-            type="button"
-            role="radio"
-            aria-checked={mode === m.key}
-            onClick={() => onModeChange(m.key)}
-            className={
-              "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
-              (mode === m.key ? "border-foreground bg-foreground text-background" : "border-line text-secondary hover:text-foreground")
-            }
-          >
-            {m.label}
-          </button>
-        ))}
-      </div>
-      <p className="text-xs text-ink-40">
-        {mode === "services"
-          ? `Shared equally across the ${services} services on these invoices; a service never gets more than it still owes.`
-          : "Each invoice is cleared in turn, starting with the oldest."}
-      </p>
+      <legend className="mb-2 text-xs tracking-eyebrow text-secondary">Split across the invoices (oldest first; edit any share)</legend>
       <div className="flex flex-col divide-y divide-line/60 rounded-2xl border border-line">
         {invoices.map((inv) => (
           <div key={inv.id} className="grid grid-cols-1 items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
             <p className="text-sm">
               <span className="font-medium">{inv.display_number}</span>
               <span className="ml-2 text-xs text-ink-40">
-                {serviceCount(inv)} service{serviceCount(inv) === 1 ? "" : "s"} · {formatINR(inv.amount_pending)} due
+                {formatINR(inv.amount_pending)} due
                 {tdsStillExpected(inv) > 0 && `, ${formatINR(cashToClear(inv))} clears it net of TDS`}
               </span>
             </p>

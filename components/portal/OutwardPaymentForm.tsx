@@ -87,12 +87,37 @@ function splitEqually(amount: number, dues: { key: string; due: number }[]): Map
   return new Map([...given].map(([k, p]) => [k, p / 100]));
 }
 
+/** The server's "oldest" split: the oldest bill first (by date, then id), each line in turn. */
+function splitOldestFirst(amount: number, bills: VendorPayable[]): Map<string, number> {
+  let remaining = Math.round(amount * 100);
+  const given = new Map<string, number>();
+  const ordered = [...bills].sort((a, b) => a.invoice_date.localeCompare(b.invoice_date) || a.invoice_id - b.invoice_id);
+  for (const bill of ordered) {
+    for (const line of bill.lines) {
+      if (remaining <= 0) return given;
+      const take = Math.min(remaining, Math.max(Math.round(line.due * 100), 0));
+      if (take > 0) {
+        given.set(`${bill.invoice_id}:${line.line_id}`, take / 100);
+        remaining -= take;
+      }
+    }
+  }
+  return given;
+}
+
+type SplitMode = "services" | "oldest";
+const SPLIT_MODES: { key: SplitMode; label: string }[] = [
+  { key: "services", label: "Divide equally across all services" },
+  { key: "oldest", label: "Oldest bill first" },
+];
+
 function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; onDone: () => void }) {
   const { data: vendors } = useApi<Vendor[]>("/vendors");
   const [vendorId, setVendorId] = useState(initialVendorId ? String(initialVendorId) : "");
   const { data: payables, loading } = useApi<VendorPayable[]>(vendorId ? `/vendors/${vendorId}/payables` : null);
   const [picked, setPicked] = useState<number[]>([]);
   const [amountInput, setAmountInput] = useState("");
+  const [mode, setMode] = useState<SplitMode>("services");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -107,8 +132,10 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
     () =>
       over || amount <= 0
         ? new Map<string, number>()
-        : splitEqually(amount, selected.flatMap((p) => p.lines.map((l) => ({ key: `${p.invoice_id}:${l.line_id}`, due: l.due })))),
-    [amount, over, selected],
+        : mode === "oldest"
+          ? splitOldestFirst(amount, selected)
+          : splitEqually(amount, selected.flatMap((p) => p.lines.map((l) => ({ key: `${p.invoice_id}:${l.line_id}`, due: l.due })))),
+    [amount, over, selected, mode],
   );
   const bank = vendor?.bank_accounts[0];
 
@@ -127,6 +154,7 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
         vendor_id: Number(vendorId),
         vendor_invoice_ids: selected.map((p) => p.invoice_id),
         amount,
+        split: mode,
         purpose: fd.get("purpose") || null,
         bank_details: fd.get("bank_details") || null,
       });
@@ -220,6 +248,35 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
       ))}
 
       {selected.length > 0 && (
+        <fieldset className="flex flex-col gap-2">
+          <legend className="mb-2 text-xs tracking-eyebrow text-secondary">How to split this payment</legend>
+          <div role="radiogroup" aria-label="How to split this payment" className="flex flex-wrap gap-2">
+            {SPLIT_MODES.map((m) => (
+              <button
+                key={m.key}
+                type="button"
+                role="radio"
+                aria-checked={mode === m.key}
+                onClick={() => setMode(m.key)}
+                className={
+                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
+                  (mode === m.key ? "border-foreground bg-foreground text-background" : "border-line text-secondary hover:text-foreground")
+                }
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-ink-40">
+            {mode === "services"
+              ? `Shared equally across the ${selected.reduce((n, p) => n + p.lines.length, 0)} UPS codes on the selected bills; a code never gets more than it still owes.`
+              : "The oldest selected bill is paid in full first, then the next, until the amount runs out."}
+            {" "}The table above shows each code&apos;s share.
+          </p>
+        </fieldset>
+      )}
+
+      {selected.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <Field label="Amount (₹)">
             <input
@@ -232,7 +289,7 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
             <span className={"mt-1 block text-xs " + (over ? "text-danger" : "text-ink-40")}>
               {over
                 ? `Cannot be more than the ${formatINR(totalDue)} still due on the selected bills.`
-                : `Up to ${formatINR(totalDue)}. Split equally across ${split.size} UPS code${split.size === 1 ? "" : "s"}.`}
+                : `Up to ${formatINR(totalDue)}. ${mode === "services" ? "Divided equally across" : "Paid oldest first over"} ${split.size} UPS code${split.size === 1 ? "" : "s"}.`}
             </span>
           </Field>
           <Field label="Purpose (optional)">
