@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowLeft, Mail, Phone, Package, BadgeCheck, Plus, Pencil, Layers, FileText, Briefcase } from "lucide-react";
+import { ArrowLeft, Mail, Phone, Package, BadgeCheck, Plus, Pencil, Layers, FileText, Briefcase, Link2 } from "lucide-react";
 import { PortalShell } from "@/components/portal/PortalShell";
 import {
   Panel,
@@ -125,8 +125,18 @@ export default function VendorDetailPage() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <StatusPill status={vendor?.is_verified ? "Verified" : vendor?.approval_status ?? "Pending"} />
+            {vendor && canAddInvoice && (
+              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setInvOpen(true)}>
+                <Plus className="h-4 w-4" /> Upload invoice
+              </Button>
+            )}
+            {vendor && canManage && (
+              <Button size="sm" variant="secondary" magnetic={false} onClick={() => setJobsOpen(true)} title="Map this vendor to a project service; each mapping gets a UPS code">
+                <Link2 className="h-4 w-4" /> Map (UPS code)
+              </Button>
+            )}
             {vendor && (
               <Button size="sm" variant="secondary" magnetic={false} onClick={() => setJobsOpen(true)}>
                 <Briefcase className="h-4 w-4" /> Jobs{assignments.length > 0 && ` (${assignments.length})`}
@@ -318,16 +328,8 @@ export default function VendorDetailPage() {
               layoutId="vendor-view"
               label="Vendor jobs and invoices"
             />
-            {view === "invoices" && (
-              <div className="flex flex-wrap items-center gap-3">
-                <MonthFilter />
-                {canAddInvoice && (
-                  <Button size="sm" variant="secondary" magnetic={false} onClick={() => setInvOpen(true)}>
-                    <Plus className="h-4 w-4" /> Upload invoice
-                  </Button>
-                )}
-              </div>
-            )}
+            {/* Upload invoice now sits in the page header, next to Verified. */}
+            {view === "invoices" && <MonthFilter />}
           </div>
 
           {view === "jobs" ? (

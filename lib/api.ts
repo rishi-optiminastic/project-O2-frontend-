@@ -246,7 +246,7 @@ export interface Agent {
   business_name: string;
   legal_name?: string | null;
   contact_person?: string | null;
-  email: string;
+  email?: string | null;
   phone?: string | null;
   address?: string | null;
   gst_number?: string | null;
@@ -297,6 +297,8 @@ export interface Client {
   business_name: string;
   legal_name?: string | null;
   email: string;
+  /** More addresses that also receive the client's invoices. */
+  other_emails?: string[];
   phone?: string | null;
   billing_address?: string | null;
   gst_number?: string | null;

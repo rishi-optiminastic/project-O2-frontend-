@@ -35,7 +35,7 @@ export default function AgentsPage() {
               <Row key={a.id} onClick={() => router.push(`/portal/agents/${a.id}`)}>
                 <Cell className="font-medium">
                   {a.business_name}
-                  <span className="block text-xs text-ink-40">{a.email}</span>
+                  {a.email && <span className="block text-xs text-ink-40">{a.email}</span>}
                 </Cell>
                 <Cell className="text-ink-40">{a.phone ?? "-"}</Cell>
                 <Cell className="tabular-nums">{a.is_house ? "In-house · 0%" : `${a.commission_rate}%`}</Cell>
@@ -92,9 +92,6 @@ function AgentForm({
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Agent name">
           <input name="business_name" maxLength={NAME_MAX} required className={inputClass} />
-        </Field>
-        <Field label="Email">
-          <input name="email" type="email" required className={inputClass} />
         </Field>
         <Field label="Phone">
           <input name="phone" type="tel" {...FIELD_RULES.phone} className={inputClass} />

@@ -142,7 +142,11 @@ export default function ClientDetailPage() {
                 <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Onboarding details</h2>
                 <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-3">
                   <DataField label="GST number" value={client?.gst_number} mono />
-                  <DataField label="Certificate of incorporation" value={client?.coi} mono />
+                  <DataField label="Certificate of incorporation" value={client?.coi || (client ? "—" : null)} mono />
+                  <DataField
+                    label="Other emails"
+                    value={client ? (client.other_emails?.length ? client.other_emails.join(", ") : "None") : null}
+                  />
                   <DataField
                     label="MSME"
                     value={client ? (client.msme ? `Yes${client.msme_number ? ` · ${client.msme_number}` : ""}` : "No") : null}

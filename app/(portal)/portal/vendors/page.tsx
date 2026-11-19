@@ -230,7 +230,26 @@ function VendorForm({ open, onOpenChange, onSaved }: { open: boolean; onOpenChan
                       );
                     })}
                   </div>
-                ) : (
+                ) : null}
+                {catalogue && catalogue.length > 0 && (
+                  <label className="mt-1 inline-flex w-fit cursor-pointer items-center gap-2 text-sm text-secondary">
+                    <input
+                      type="checkbox"
+                      checked={serviceIds.length === catalogue.length}
+                      // Part-ticked when some, but not all, services are chosen.
+                      ref={(el) => {
+                        if (el) el.indeterminate = serviceIds.length > 0 && serviceIds.length < catalogue.length;
+                      }}
+                      onChange={(e) => setServiceIds(e.target.checked ? catalogue.map((s) => s.id) : [])}
+                      className="h-4 w-4 accent-foreground"
+                    />
+                    Select all services
+                    <span className="text-xs text-ink-40">
+                      ({serviceIds.length} of {catalogue.length} selected)
+                    </span>
+                  </label>
+                )}
+                {catalogue && catalogue.length > 0 ? null : (
                   <p className="text-xs text-ink-40">{catalogue ? "No services in the catalogue yet." : "Loading services…"}</p>
                 )}
               </fieldset>

@@ -20,6 +20,9 @@ const YES_NO = [
 /** Only these roles see, create or mark group companies (the backend enforces the same). */
 export const GROUP_COMPANY_ROLES = ["ADMIN_CEO", "CFO"] as const;
 
+/** Optiminastic's usual commission (%) on a vendor's bills, prefilled for a new vendor. */
+export const DEFAULT_COMMISSION_RATE = 1.4;
+
 const EMPTY_ACCOUNT: VendorBankAccount = { account_holder: "", bank_name: "", account_number: "", ifsc_code: "" };
 
 type AccountInput = {
@@ -138,7 +141,8 @@ export function VendorFields({ vendor, beforeBankAccounts }: { vendor?: Vendor; 
           max={100}
           step="0.01"
           required
-          defaultValue={vendor?.commission_rate ?? 0}
+          // New vendors start at Optiminastic's usual 1.4%; an existing vendor keeps its own rate.
+          defaultValue={vendor ? vendor.commission_rate ?? 0 : DEFAULT_COMMISSION_RATE}
           title="Kept back from what the vendor is paid on each bill; can be changed per bill."
           className={inputClass}
         />

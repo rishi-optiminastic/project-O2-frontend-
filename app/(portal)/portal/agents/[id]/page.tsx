@@ -218,9 +218,6 @@ function AgentEditForm({
         <Field label="Agent name">
           <input name="business_name" maxLength={NAME_MAX} required defaultValue={agent.business_name} className={inputClass} />
         </Field>
-        <Field label="Email">
-          <input name="email" type="email" required defaultValue={agent.email} className={inputClass} />
-        </Field>
         <Field label="Phone">
           <input name="phone" type="tel" {...FIELD_RULES.phone} defaultValue={agent.phone ?? ""} className={inputClass} />
         </Field>

@@ -8,18 +8,16 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type Vendor, type VendorPayable } from "@/lib/api";
 import { formatDate, formatINR } from "@/lib/utils";
-import { NAME_MAX, NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
+import { NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
 import { emitPortalEvent, PORTAL_EVENTS } from "@/lib/events";
 
-type Mode = "vendor" | "other";
 
 /**
- * Record an outward payment for CEO sign-off.
+ * Record an outward payment to a vendor, for CEO sign-off.
  *
- * To a vendor: pick the vendor and the bills being paid. The amount cannot be more
- * than those bills still owe (after Optiminastic's commission) and is split equally
- * across every UPS code on them, as the preview shows. "Other payee" is for money
- * out that is not a vendor bill, such as rent.
+ * Pick the vendor and the bills being paid. Only verified vendors can be paid. The amount
+ * cannot be more than those bills still owe (after Optiminastic's commission) and is
+ * divided equally across their UPS codes, or paid oldest bill first, as the preview shows.
  */
 export function OutwardPaymentForm({
   open,
@@ -31,38 +29,15 @@ export function OutwardPaymentForm({
   /** Start with this vendor chosen (on a vendor's page). */
   vendorId?: number;
 }) {
-  const [mode, setMode] = useState<Mode>("vendor");
-
   return (
     <Modal
       open={open}
       onOpenChange={onOpenChange}
       size="wide"
       title="Outward payment"
-      description="Money going out. It goes to the CEO for approval and is released once the bank reference (UTR) is entered."
+      description="Payment to a verified vendor against its bills. It goes to the CEO for approval and is released once the bank reference (UTR) is entered."
     >
-      <div role="radiogroup" aria-label="Paid to" className="mb-5 inline-flex rounded-full border border-line bg-white/50 p-1">
-        {(["vendor", "other"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            role="radio"
-            aria-checked={mode === m}
-            onClick={() => setMode(m)}
-            className={
-              "rounded-full px-4 py-1.5 text-xs font-medium transition-colors " +
-              (mode === m ? "bg-foreground text-background" : "text-secondary hover:text-foreground")
-            }
-          >
-            {m === "vendor" ? "Vendor bills" : "Other payee"}
-          </button>
-        ))}
-      </div>
-      {open && (mode === "vendor" ? (
-        <VendorPayment initialVendorId={vendorId} onDone={() => onOpenChange(false)} />
-      ) : (
-        <OtherPayment onDone={() => onOpenChange(false)} />
-      ))}
+      {open && <VendorPayment initialVendorId={vendorId} onDone={() => onOpenChange(false)} />}
     </Modal>
   );
 }
@@ -122,7 +97,10 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
   const [saving, setSaving] = useState(false);
 
   const vendor = vendors?.find((v) => String(v.id) === vendorId);
-  const open = (payables ?? []).filter((p) => p.due > 0);
+  // A vendor is paid only once verified (tax and bank details checked); the server refuses others too.
+  const verified = (vendors ?? []).filter((v) => v.is_verified);
+  const unverifiedCount = (vendors ?? []).length - verified.length;
+  const open = vendor && !vendor.is_verified ? [] : (payables ?? []).filter((p) => p.due > 0);
   const selected = open.filter((p) => picked.includes(p.invoice_id));
   const totalDue = +selected.reduce((s, p) => s + p.due, 0).toFixed(2);
   // Until an amount is typed, pay everything still due on the selected bills.
@@ -178,13 +156,23 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
               setPicked([]);
               setAmountInput("");
             }}
-            placeholder="Choose the vendor"
-            options={(vendors ?? []).map((v) => ({ value: String(v.id), label: v.business_name }))}
+            placeholder={vendors ? (verified.length ? "Choose the vendor" : "No verified vendor yet") : "Loading vendors…"}
+            options={verified.map((v) => ({ value: String(v.id), label: v.business_name }))}
           />
         </Field>
+        {unverifiedCount > 0 && (
+          <p className="mt-1.5 text-xs text-ink-40">
+            Only verified vendors can be paid. {unverifiedCount} vendor{unverifiedCount === 1 ? " is" : "s are"} not verified yet: verify
+            them on the Vendors page first.
+          </p>
+        )}
       </div>
 
-      {vendorId && (loading && !payables ? (
+      {vendor && !vendor.is_verified ? (
+        <p role="alert" className="rounded-2xl border border-warning-line bg-warning-soft p-4 text-sm text-warning">
+          {vendor.business_name} is not verified yet, so it cannot be paid. Verify the vendor (tax and bank details) on its page first.
+        </p>
+      ) : vendorId && (loading && !payables ? (
         <p className="text-sm text-ink-40">Loading the vendor&apos;s bills…</p>
       ) : open.length === 0 ? (
         <p className="rounded-2xl border border-line bg-mist/50 p-4 text-sm text-secondary">
@@ -319,59 +307,3 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
   );
 }
 
-function OtherPayment({ onDone }: { onDone: () => void }) {
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    const fd = new FormData(e.currentTarget);
-    const amount = Number(fd.get("amount"));
-    const tax = Number(fd.get("tax_deductions") || 0);
-    try {
-      await api.post("/approvals", {
-        payee_name: fd.get("payee_name"),
-        amount,
-        purpose: fd.get("purpose"),
-        tax_deductions: tax,
-        net_payable: amount - tax,
-        bank_details: fd.get("bank_details"),
-      });
-      emitPortalEvent(PORTAL_EVENTS.paymentRequested);
-      onDone();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <Field label="Payee name">
-        <input name="payee_name" required maxLength={NAME_MAX} className={inputClass} />
-      </Field>
-      <Field label="Amount (₹)">
-        <input name="amount" {...NUMBER_RULES.positiveMoney} required className={inputClass} />
-      </Field>
-      <Field label="Tax deductions (₹)">
-        <input name="tax_deductions" {...NUMBER_RULES.money} defaultValue={0} className={inputClass} />
-      </Field>
-      <Field label="Purpose">
-        <input name="purpose" maxLength={TEXT_MAX} className={inputClass} />
-      </Field>
-      <div className="sm:col-span-2">
-        <Field label="Bank details">
-          <input name="bank_details" maxLength={TEXT_MAX} placeholder="Bank · A/C · IFSC" className={inputClass} />
-        </Field>
-      </div>
-      {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
-      <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
-        <Button type="button" variant="secondary" magnetic={false} onClick={onDone}>Cancel</Button>
-        <Button type="submit" magnetic={false} disabled={saving}>{saving ? "Saving…" : "Create request"}</Button>
-      </div>
-    </form>
-  );
-}
