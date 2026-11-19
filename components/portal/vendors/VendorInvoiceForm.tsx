@@ -42,12 +42,11 @@ export function VendorInvoiceForm({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      size="wide"
-      title="Record vendor invoice"
-      description="Map the bill to the vendor's UPS codes on one project. GST comes from the rate and TDS from the section; Optiminastic's commission is deducted from what the vendor is paid."
+      title="Upload vendor invoice"
+      description="GST is worked out from the rate; TDS from the section. Net payable = amount + GST - TDS, less Optiminastic's commission."
     >
       {!vendor && (
-        <div className="mb-4 sm:w-96">
+        <div className="mb-4">
           <Field label="Vendor">
             <Select
               value={pickedId}
@@ -173,13 +172,14 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
   }
 
   return (
-    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <Field label="Invoice number">
         <input name="invoice_number" required {...FIELD_RULES.invoiceNumber} className={inputClass} />
       </Field>
       <Field label="Invoice date">
         <input name="invoice_date" {...pastDateRule()} required defaultValue={indiaToday()} className={inputClass} />
       </Field>
+      <div className="sm:col-span-2">
       <Field label="Project">
         <Select
           value={activeProject}
@@ -191,67 +191,54 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
           options={projects}
         />
       </Field>
+      </div>
 
       {codes.length > 0 && (
-        <div className="overflow-x-auto rounded-2xl border border-line sm:col-span-3">
-          <table className="w-full min-w-[620px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
-                <th className="px-4 py-3 font-medium">UPS code</th>
-                <th className="px-4 py-3 font-medium">Agreed cost · left to bill</th>
-                <th className="w-52 px-4 py-3 font-medium">Billed now (₹, before GST)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {codes.map((a) => {
-                const now = Number(amounts[a.id] || 0);
-                const over = now > 0 && now > a.remaining;
-                const left = Math.max(a.remaining, 0);
-                return (
-                  <tr key={a.id} className="border-b border-line/60 align-top last:border-0">
-                    <td className="px-4 py-2">
-                      <span className="font-mono text-xs font-medium">{a.code}</span>
-                      <span className="block text-xs text-secondary">{a.service_title}</span>
-                    </td>
-                    <td className="px-4 py-2 tabular-nums">
-                      <span className="block text-secondary">Agreed {formatINR(a.agreed_cost)}</span>
-                      <span className={"block text-xs " + (a.remaining <= 0 ? "text-danger" : "text-ink-40")}>
-                        {a.remaining < 0
-                          ? `Already ${formatINR(-a.remaining)} over`
-                          : `${formatINR(left)} left${a.invoiced > 0 ? ` (${formatINR(a.invoiced)} billed)` : ""}`}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2">
-                      <input
-                        {...NUMBER_RULES.money}
-                        value={amounts[a.id] ?? ""}
-                        onChange={(e) => setAmounts((all) => ({ ...all, [a.id]: e.target.value }))}
-                        aria-label={`Amount billed against ${a.code}`}
-                        className={inputClass + (over ? " border-warning" : "")}
-                      />
-                      {over && (
-                        <span className="mt-1 block text-xs leading-snug text-warning">
-                          {formatINR(now - left)} over the agreed cost. Only {formatINR(left)} is left to bill on this code.
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <fieldset className="flex flex-col gap-3 sm:col-span-2">
+          <legend className="mb-3 text-xs tracking-eyebrow text-secondary">UPS codes (jobs) billed</legend>
+          {codes.map((a) => {
+            const now = Number(amounts[a.id] || 0);
+            const over = now > 0 && now > a.remaining;
+            const left = Math.max(a.remaining, 0);
+            return (
+              <div key={a.id} className="grid grid-cols-1 gap-3 rounded-2xl border border-line p-4 sm:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] sm:items-end">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-ink-40">{a.code}</p>
+                  <p className="mt-1 text-sm font-medium leading-snug">{a.service_title}</p>
+                  <p className={"mt-1 text-xs tabular-nums " + (a.remaining <= 0 ? "text-danger" : "text-secondary")}>
+                    Agreed {formatINR(a.agreed_cost)} ·{" "}
+                    {a.remaining < 0
+                      ? `already ${formatINR(-a.remaining)} over`
+                      : `${formatINR(left)} left${a.invoiced > 0 ? ` (${formatINR(a.invoiced)} billed)` : ""}`}
+                  </p>
+                </div>
+                <Field label="Amount before GST (₹)">
+                  <input
+                    {...NUMBER_RULES.money}
+                    value={amounts[a.id] ?? ""}
+                    onChange={(e) => setAmounts((all) => ({ ...all, [a.id]: e.target.value }))}
+                    aria-label={`Amount billed against ${a.code}`}
+                    className={inputClass + (over ? " border-warning" : "")}
+                  />
+                </Field>
+                {over && (
+                  <p className="text-xs leading-snug text-warning sm:col-span-2">
+                    {formatINR(now - left)} over the agreed cost. Only {formatINR(left)} is left to bill on this code.
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </fieldset>
       )}
 
       <Field label="GST rate">
         <Select value={gstRate} onValueChange={setGstRate} options={GST_RATE_OPTIONS} />
       </Field>
-      <div className="sm:col-span-2">
-        <Field label="TDS section">
-          <Select value={section} onValueChange={setSection} options={TDS_SECTIONS.map((t) => ({ value: t.key, label: `${t.label} (${t.rate}%)` }))} />
-        </Field>
-      </div>
-      <Field label="Percentage (rate) · commission %">
+      <Field label="TDS section">
+        <Select value={section} onValueChange={setSection} options={TDS_SECTIONS.map((t) => ({ value: t.key, label: `${t.label} (${t.rate}%)` }))} />
+      </Field>
+      <Field label="Commission (%)">
         <input
           type="number"
           min={0}
@@ -263,27 +250,25 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
           className={inputClass}
         />
       </Field>
-      <div className="sm:col-span-2">
-        <Field label="Upload invoice (PDF or image, optional)">
-          <input
-            type="file"
-            accept="application/pdf,image/png,image/jpeg,image/webp"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-sm text-secondary file:mr-3 file:rounded-full file:border file:border-line file:bg-white file:px-4 file:py-2 file:text-sm file:font-medium file:text-foreground hover:file:bg-mist"
-          />
-        </Field>
-      </div>
-      <label className="flex items-center gap-2 text-sm font-light text-secondary sm:col-span-3">
+      <Field label="Invoice file (optional)">
+        <input
+          type="file"
+          accept="application/pdf,image/png,image/jpeg,image/webp"
+          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+          className={`${inputClass} h-auto py-2 file:mr-3 file:rounded-lg file:border-0 file:bg-mist file:px-3 file:py-1.5 file:text-sm`}
+        />
+      </Field>
+      <label className="flex items-center gap-2 text-sm font-light text-secondary sm:col-span-2">
         <input type="checkbox" checked={interstate} onChange={(e) => setInterstate(e.target.checked)} className="accent-foreground" />
         Vendor is in another state (IGST instead of CGST + SGST)
       </label>
       {!vendor.gst_number && gst > 0 && (
-        <p className="text-xs text-warning sm:col-span-3">
+        <p className="text-xs text-warning sm:col-span-2">
           ⚠ This vendor has no GSTIN on record, so the GST on this bill cannot be claimed as input credit. Add their GSTIN on the vendor first if they have one.
         </p>
       )}
 
-      <div className="grid grid-cols-2 gap-3 rounded-2xl border border-line bg-mist/50 p-4 text-center text-sm sm:col-span-3 sm:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 rounded-2xl border border-line bg-mist/50 p-4 text-center text-sm sm:col-span-2 sm:grid-cols-3">
         <div>
           <p className="text-xs text-ink-40">Amount</p>
           <p className="mt-1 font-medium tabular-nums">{formatINR(amount)}</p>
@@ -311,7 +296,7 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
       </div>
 
       {overruns.length > 0 && (
-        <div role="status" className="rounded-2xl border border-warning-line bg-warning-soft p-4 text-sm sm:col-span-3">
+        <div role="status" className="rounded-2xl border border-warning-line bg-warning-soft p-4 text-sm sm:col-span-2">
           <p className="font-medium text-warning">
             This invoice is {formatINR(overTotal)} over the agreed cost on {overruns.length} UPS code{overruns.length === 1 ? "" : "s"}
             {" "}({overruns.map((o) => o.code).join(", ")}).
@@ -323,8 +308,8 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
           </p>
         </div>
       )}
-      {error && <p className="sm:col-span-3 text-sm text-danger">⚠ {error}</p>}
-      <div className="sm:col-span-3 flex justify-end gap-3 pt-1">
+      {error && <p className="sm:col-span-2 text-sm text-danger">⚠ {error}</p>}
+      <div className="sm:col-span-2 flex justify-end gap-3 pt-1">
         <Button type="button" variant="secondary" magnetic={false} onClick={onCancel}>Cancel</Button>
         <Button type="submit" magnetic={false} disabled={saving || lines.length === 0}>
           {saving ? "Saving…" : overruns.length ? "Save anyway" : "Save invoice"}

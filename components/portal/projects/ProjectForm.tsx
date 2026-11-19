@@ -133,18 +133,18 @@ export function ProjectForm({
       onOpenChange={(next) => (!next && created ? finish(created) : onOpenChange(next))}
       size="wide"
       stacked={stacked}
-      title={project ? "Edit project" : created ? `New project · ${created.code}` : "New project"}
+      title={project ? "Edit project" : created ? `Assign vendors (2 of 2) · ${created.code}` : stacked ? "New project" : "New project (1 of 2)"}
       description={
         created
-          ? "Step 2 of 2: for each service, choose the vendor who delivers it and the agreed cost. Each mapping gets a UPS code."
+          ? "The project is created. Pick the vendor for each service and their cost before GST. Each mapping gets its UPS code when you save."
           : project
             ? "Who the work is for, the services it bills and the fee agreed."
-            : "Step 1 of 2: who the work is for, the services it bills and the fee agreed."
+            : "Who the work is for, the services it bills and the fee agreed."
       }
     >
       {!project && !stacked && <Steps step={created ? 2 : 1} />}
       {created ? (
-        <AssignVendorsPanel project={created} onSaved={setCreated} onClose={() => finish(created)} cancelLabel="Skip for now" />
+        <AssignVendorsPanel project={created} onSaved={setCreated} onClose={() => finish(created)} cancelLabel="Skip for now" submitLabel="Save vendors" />
       ) : (
       <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Project name">
@@ -223,7 +223,7 @@ export function ProjectForm({
             Cancel
           </Button>
           <Button type="submit" magnetic={false} disabled={saving}>
-            {saving ? "Saving…" : project ? "Save changes" : "Create project"}
+            {saving ? "Saving…" : project ? "Save changes" : stacked ? "Create project" : "Next: assign vendors"}
           </Button>
         </ModalFooter>
       </form>

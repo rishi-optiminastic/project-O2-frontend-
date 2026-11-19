@@ -980,3 +980,80 @@ export interface ServiceBulkCreated {
   created: number;
   services: Service[];
 }
+
+/** Ask O2: whether the assistant has an AI key, and which model it uses. */
+export interface AssistantStatus {
+  configured: boolean;
+  model: string;
+}
+
+export interface AssistantConversationSummary {
+  id: number;
+  title: string;
+  updated_at: string;
+}
+
+/** A change the assistant proposed (runs only after "Yes, do it"), or a download it offers. */
+export interface AssistantAction {
+  id: number;
+  tool: string;
+  kind: "write" | "download";
+  summary: string;
+  fields: { label: string; value: string }[];
+  status: "pending" | "running" | "done" | "failed" | "cancelled" | "expired";
+  error: string | null;
+  /** For downloads: the API path to fetch and the file name to save as. */
+  download: { path: string; filename: string } | null;
+  created_at: string;
+}
+
+export interface AssistantMessage {
+  id: number;
+  role: "user" | "assistant";
+  text: string;
+  files: { id: number; name: string }[];
+  actions: AssistantAction[];
+}
+
+export interface AssistantConversation extends AssistantConversationSummary {
+  messages: AssistantMessage[];
+}
+
+/** How a plugin proves who we are. "url" means the key is part of the plugin's URL. */
+export type AssistantPluginAuthType = "none" | "bearer" | "basic" | "header" | "url";
+
+/** A ready-made plugin offered on the Plugins page. */
+export interface AssistantPluginDirectoryEntry {
+  key: string;
+  name: string;
+  description: string;
+  url: string;
+  auth: AssistantPluginAuthType;
+  auth_help: string;
+  docs: string;
+}
+
+/** A connected remote MCP server. Its URL and key are never sent back. */
+export interface AssistantPlugin {
+  id: number;
+  name: string;
+  host: string;
+  directory_key: string | null;
+  enabled: boolean;
+  last_error: string | null;
+  tools: { name: string; description: string; read_only: boolean }[];
+  created_at: string;
+}
+
+export interface AssistantPluginList {
+  directory: AssistantPluginDirectoryEntry[];
+  plugins: AssistantPlugin[];
+}
+
+/** A saved "/" command: typing /name puts its prompt in the message box. */
+export interface AssistantCommand {
+  id: number;
+  name: string;
+  description: string;
+  prompt: string;
+}

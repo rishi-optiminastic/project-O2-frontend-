@@ -11,6 +11,8 @@ export const PORTAL_EVENTS = {
   receiptRecorded: "o2:receipt-recorded",
   paymentRequested: "o2:payment-requested",
   vendorInvoiceRecorded: "o2:vendor-invoice-recorded",
+  /** Ask O2 ran a change the user confirmed. */
+  assistantActed: "o2:assistant-acted",
 } as const;
 
 type PortalEvent = (typeof PORTAL_EVENTS)[keyof typeof PORTAL_EVENTS];

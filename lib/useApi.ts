@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { PORTAL_EVENTS } from "@/lib/events";
 
 /** Minimal GET hook with loading / error / refetch. */
 export function useApi<T>(path: string | null) {
@@ -25,6 +26,16 @@ export function useApi<T>(path: string | null) {
   useEffect(() => {
     refetch();
   }, [refetch]);
+
+  // When Ask O2 runs a change, whatever page is open reloads its data quietly (no loading state).
+  useEffect(() => {
+    if (!path) return;
+    const quiet = () => {
+      api.get<T>(path).then(setData).catch(() => {});
+    };
+    window.addEventListener(PORTAL_EVENTS.assistantActed, quiet);
+    return () => window.removeEventListener(PORTAL_EVENTS.assistantActed, quiet);
+  }, [path]);
 
   return { data, loading, error, refetch, setData };
 }
