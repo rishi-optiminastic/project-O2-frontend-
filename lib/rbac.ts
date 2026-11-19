@@ -14,6 +14,7 @@ import type { Role } from "@/lib/api";
  *   Taxation       ✓    ✓    ✓    –     –
  *   Approvals      ✓    ✓    ✓    –     –
  *   Audit Trail    ✓    –    –    –     –
+ *   Ask O2         ✓    ✓    –    –     –
  *   PI approval    ✓    ✓    –    –     ✓   (approve a proforma, which sends it to the client)
  *   (everything else: every role; the Coordinator only reads)
  */
@@ -27,6 +28,7 @@ const RESTRICTED: { prefix: string; roles: Role[] }[] = [
   { prefix: "/portal/approvals", roles: NON_EXEC },
   { prefix: "/portal/audit", roles: ["ADMIN_CEO"] },
   { prefix: "/portal/team", roles: ["ADMIN_CEO"] },
+  { prefix: "/portal/assistant", roles: ["ADMIN_CEO", "CFO"] },
 ];
 
 /** True if the given role may see/open the given portal path. */

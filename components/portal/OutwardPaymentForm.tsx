@@ -7,17 +7,20 @@ import { Select } from "@/components/portal/Select";
 import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { api, ApiError, type Vendor, type VendorPayable } from "@/lib/api";
-import { formatDate, formatINR } from "@/lib/utils";
+import { formatINR } from "@/lib/utils";
 import { NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
 import { emitPortalEvent, PORTAL_EVENTS } from "@/lib/events";
 
+/** Pay every bill the vendor still owes on. */
+const ALL_BILLS = "all";
 
 /**
  * Record an outward payment to a vendor, for CEO sign-off.
  *
- * Pick the vendor and the bills being paid. Only verified vendors can be paid. The amount
- * cannot be more than those bills still owe (after Optiminastic's commission) and is
- * divided equally across their UPS codes, or paid oldest bill first, as the preview shows.
+ * Pick a verified vendor and the bill being paid, or all their bills still due. Only
+ * verified vendors can be paid, and only against their bills. The amount cannot be more
+ * than those bills still owe (after Optiminastic's commission). It is divided equally
+ * across every UPS code on them, or paid oldest bill first, as the hint shows.
  */
 export function OutwardPaymentForm({
   open,
@@ -33,11 +36,10 @@ export function OutwardPaymentForm({
     <Modal
       open={open}
       onOpenChange={onOpenChange}
-      size="wide"
       title="Outward payment"
-      description="Payment to a verified vendor against its bills. It goes to the CEO for approval and is released once the bank reference (UTR) is entered."
+      description="Payment to a verified vendor against its bills. It goes to the CEO for approval and is released once the bank reference (UTR) is entered. A vendor is never paid more than their bills still owe."
     >
-      {open && <VendorPayment initialVendorId={vendorId} onDone={() => onOpenChange(false)} />}
+      {open && <PaymentFields initialVendorId={vendorId} onDone={() => onOpenChange(false)} />}
     </Modal>
   );
 }
@@ -86,55 +88,66 @@ const SPLIT_MODES: { key: SplitMode; label: string }[] = [
   { key: "oldest", label: "Oldest bill first" },
 ];
 
-function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; onDone: () => void }) {
+function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; onDone: () => void }) {
   const { data: vendors } = useApi<Vendor[]>("/vendors");
-  const [vendorId, setVendorId] = useState(initialVendorId ? String(initialVendorId) : "");
-  const { data: payables, loading } = useApi<VendorPayable[]>(vendorId ? `/vendors/${vendorId}/payables` : null);
-  const [picked, setPicked] = useState<number[]>([]);
+  const [payee, setPayee] = useState<string | undefined>(initialVendorId ? String(initialVendorId) : undefined);
+  const chosen = payee !== undefined ? vendors?.find((v) => String(v.id) === payee) : undefined;
+  // Only a verified vendor (tax and bank details checked) can be paid; the server refuses others too.
+  const isVendor = payee !== undefined && (chosen === undefined || chosen.is_verified);
+  const verifiedVendors = (vendors ?? []).filter((v) => v.is_verified);
+  const unverifiedCount = (vendors ?? []).length - verifiedVendors.length;
+  const { data: payables, loading } = useApi<VendorPayable[]>(isVendor ? `/vendors/${payee}/payables` : null);
+  const [bill, setBill] = useState<string>(ALL_BILLS);
+  const [bank, setBank] = useState<string | undefined>(undefined);
   const [amountInput, setAmountInput] = useState("");
   const [mode, setMode] = useState<SplitMode>("services");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const vendor = vendors?.find((v) => String(v.id) === vendorId);
-  // A vendor is paid only once verified (tax and bank details checked); the server refuses others too.
-  const verified = (vendors ?? []).filter((v) => v.is_verified);
-  const unverifiedCount = (vendors ?? []).length - verified.length;
-  const open = vendor && !vendor.is_verified ? [] : (payables ?? []).filter((p) => p.due > 0);
-  const selected = open.filter((p) => picked.includes(p.invoice_id));
+  const vendor = isVendor ? vendors?.find((v) => String(v.id) === payee) : undefined;
+  const due = (payables ?? []).filter((p) => p.due > 0);
+  const selected = bill === ALL_BILLS ? due : due.filter((p) => String(p.invoice_id) === bill);
   const totalDue = +selected.reduce((s, p) => s + p.due, 0).toFixed(2);
-  // Until an amount is typed, pay everything still due on the selected bills.
+  // Until an amount is typed, pay everything still due on the chosen bills.
   const amount = amountInput.trim() === "" ? totalDue : Number(amountInput);
-  const over = amount > totalDue + 0.001;
+  const over = isVendor && amount > totalDue + 0.001;
   const split = useMemo(
     () =>
-      over || amount <= 0
+      !isVendor || over || amount <= 0
         ? new Map<string, number>()
         : mode === "oldest"
           ? splitOldestFirst(amount, selected)
           : splitEqually(amount, selected.flatMap((p) => p.lines.map((l) => ({ key: `${p.invoice_id}:${l.line_id}`, due: l.due })))),
-    [amount, over, selected, mode],
+    [amount, isVendor, over, selected, mode],
   );
-  const bank = vendor?.bank_accounts[0];
+  const codeOf = new Map(selected.flatMap((p) => p.lines.map((l) => [`${p.invoice_id}:${l.line_id}`, l.code ?? p.invoice_number])));
+  const accounts = (vendor?.bank_accounts ?? []).map((a) => ({
+    value: `${a.bank_name} · A/C ${a.account_number} · ${a.ifsc_code}`,
+    label: `${a.bank_name} ··${a.account_number.slice(-4)}`,
+  }));
+  const vendorReady = isVendor && selected.length > 0 && !over && amount > 0;
 
-  function toggle(id: number) {
-    setPicked((all) => (all.includes(id) ? all.filter((x) => x !== id) : [...all, id]));
+  function choosePayee(value: string) {
+    setPayee(value);
+    setBill(ALL_BILLS);
+    setBank(undefined);
+    setAmountInput("");
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (selected.length === 0 || over || amount <= 0) return;
+    if (!vendorReady) return;
     setSaving(true);
     setError(null);
     const fd = new FormData(e.currentTarget);
     try {
       await api.post("/approvals/vendor-payout", {
-        vendor_id: Number(vendorId),
+        vendor_id: Number(payee),
         vendor_invoice_ids: selected.map((p) => p.invoice_id),
         amount,
         split: mode,
         purpose: fd.get("purpose") || null,
-        bank_details: fd.get("bank_details") || null,
+        bank_details: bank ?? null,
       });
       emitPortalEvent(PORTAL_EVENTS.paymentRequested);
       onDone();
@@ -146,164 +159,156 @@ function VendorPayment({ initialVendorId, onDone }: { initialVendorId?: number; 
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      <div className="sm:w-96">
-        <Field label="Vendor">
+    <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <Field label="Paid to">
+        <Select
+          required
+          value={payee}
+          onValueChange={choosePayee}
+          placeholder={vendors ? (verifiedVendors.length ? "Which vendor?" : "No verified vendor yet") : "Loading vendors…"}
+          options={[
+            ...verifiedVendors.map((v) => ({ value: String(v.id), label: v.business_name })),
+            // Opened from an unverified vendor's page: keep it shown so the message below makes sense.
+            ...(chosen && !chosen.is_verified ? [{ value: String(chosen.id), label: `${chosen.business_name} (not verified)` }] : []),
+          ]}
+        />
+        {unverifiedCount > 0 && (
+          <span className="mt-1 block text-xs text-ink-40">
+            Only verified vendors can be paid; {unverifiedCount} {unverifiedCount === 1 ? "is" : "are"} not verified yet.
+          </span>
+        )}
+      </Field>
+      {isVendor ? (
+        <Field label="Bill (UPS codes)">
           <Select
-            value={vendorId}
+            value={bill}
             onValueChange={(v) => {
-              setVendorId(v);
-              setPicked([]);
+              setBill(v);
               setAmountInput("");
             }}
-            placeholder={vendors ? (verified.length ? "Choose the vendor" : "No verified vendor yet") : "Loading vendors…"}
-            options={verified.map((v) => ({ value: String(v.id), label: v.business_name }))}
+            options={[
+              { value: ALL_BILLS, label: due.length ? `All bills still due (${due.length})` : "No bills due" },
+              ...due.map((p) => ({ value: String(p.invoice_id), label: `${p.invoice_number} · ${formatINR(p.due)} due` })),
+            ]}
           />
         </Field>
-        {unverifiedCount > 0 && (
-          <p className="mt-1.5 text-xs text-ink-40">
-            Only verified vendors can be paid. {unverifiedCount} vendor{unverifiedCount === 1 ? " is" : "s are"} not verified yet: verify
-            them on the Vendors page first.
-          </p>
-        )}
-      </div>
-
-      {vendor && !vendor.is_verified ? (
-        <p role="alert" className="rounded-2xl border border-warning-line bg-warning-soft p-4 text-sm text-warning">
-          {vendor.business_name} is not verified yet, so it cannot be paid. Verify the vendor (tax and bank details) on its page first.
-        </p>
-      ) : vendorId && (loading && !payables ? (
-        <p className="text-sm text-ink-40">Loading the vendor&apos;s bills…</p>
-      ) : open.length === 0 ? (
-        <p className="rounded-2xl border border-line bg-mist/50 p-4 text-sm text-secondary">
-          Nothing is due to {vendor?.business_name ?? "this vendor"}: every bill is paid or already in a payout.
-        </p>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-line">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-line text-xs tracking-eyebrow text-ink-40">
-                <th className="w-10 px-4 py-3">
-                  <input
-                    type="checkbox"
-                    aria-label="Select every bill"
-                    checked={selected.length === open.length}
-                    onChange={(e) => setPicked(e.target.checked ? open.map((p) => p.invoice_id) : [])}
-                    className="h-4 w-4 accent-foreground"
-                  />
-                </th>
-                <th className="px-4 py-3 font-medium">Bill</th>
-                <th className="px-4 py-3 font-medium">UPS codes</th>
-                <th className="px-4 py-3 text-right font-medium">Payable</th>
-                <th className="px-4 py-3 text-right font-medium">Still due</th>
-                <th className="px-4 py-3 text-right font-medium">This payment</th>
-              </tr>
-            </thead>
-            <tbody>
-              {open.map((p) => {
-                const on = picked.includes(p.invoice_id);
-                const share = p.lines.reduce((s, l) => s + (split.get(`${p.invoice_id}:${l.line_id}`) ?? 0), 0);
-                return (
-                  <tr key={p.invoice_id} className="border-b border-line/60 align-top last:border-0">
-                    <td className="px-4 py-3">
-                      <input type="checkbox" checked={on} onChange={() => toggle(p.invoice_id)} aria-label={`Pay ${p.invoice_number}`} className="h-4 w-4 accent-foreground" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="font-medium">{p.invoice_number}</span>
-                      <span className="block text-xs text-ink-40">{formatDate(p.invoice_date)} · {p.status}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <ul className="flex flex-col gap-0.5">
-                        {p.lines.map((l) => (
-                          <li key={String(l.line_id)} className="font-mono text-xs text-secondary">
-                            {l.code ?? "Whole bill"}
-                            {on && split.has(`${p.invoice_id}:${l.line_id}`) && (
-                              <span className="ml-1.5 font-sans text-foreground">{formatINR(split.get(`${p.invoice_id}:${l.line_id}`) ?? 0)}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                    <td className="px-4 py-3 text-right tabular-nums text-secondary">{formatINR(p.amount_payable)}</td>
-                    <td className="px-4 py-3 text-right tabular-nums">{formatINR(p.due)}</td>
-                    <td className="px-4 py-3 text-right font-medium tabular-nums">{on ? formatINR(share) : "-"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ))}
-
-      {selected.length > 0 && (
-        <fieldset className="flex flex-col gap-2">
-          <legend className="mb-2 text-xs tracking-eyebrow text-secondary">How to split this payment</legend>
-          <div role="radiogroup" aria-label="How to split this payment" className="flex flex-wrap gap-2">
-            {SPLIT_MODES.map((m) => (
-              <button
-                key={m.key}
-                type="button"
-                role="radio"
-                aria-checked={mode === m.key}
-                onClick={() => setMode(m.key)}
-                className={
-                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
-                  (mode === m.key ? "border-foreground bg-foreground text-background" : "border-line text-secondary hover:text-foreground")
-                }
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-ink-40">
-            {mode === "services"
-              ? `Shared equally across the ${selected.reduce((n, p) => n + p.lines.length, 0)} UPS codes on the selected bills; a code never gets more than it still owes.`
-              : "The oldest selected bill is paid in full first, then the next, until the amount runs out."}
-            {" "}The table above shows each code&apos;s share.
-          </p>
-        </fieldset>
+        <div className="hidden sm:block" aria-hidden />
       )}
 
-      {selected.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {chosen && !chosen.is_verified && (
+        <p role="alert" className="rounded-2xl border border-warning-line bg-warning-soft p-4 text-sm text-warning sm:col-span-2">
+          {chosen.business_name} is not verified yet, so it cannot be paid. Verify the vendor (tax and bank details) on its page first.
+        </p>
+      )}
+
+      {isVendor && (loading && !payables ? (
+        <p className="text-sm text-ink-40 sm:col-span-2">Loading the vendor&apos;s bills…</p>
+      ) : due.length === 0 ? (
+        <p className="text-xs text-warning sm:col-span-2">
+          ⚠ Nothing is due to {vendor?.business_name ?? "this vendor"}: every bill is paid or already in a payout.
+        </p>
+      ) : (
+        <>
+          <SplitChoice mode={mode} onChange={setMode} />
+          <PaymentLimit totalDue={totalDue} split={split} codeOf={codeOf} mode={mode} />
+        </>
+      ))}
+
+      {isVendor && due.length > 0 && (
+        <>
           <Field label="Amount (₹)">
             <input
               {...NUMBER_RULES.positiveMoney}
+              name="amount"
               value={amountInput}
               placeholder={String(totalDue)}
               onChange={(e) => setAmountInput(e.target.value)}
               className={inputClass + (over ? " border-danger" : "")}
             />
-            <span className={"mt-1 block text-xs " + (over ? "text-danger" : "text-ink-40")}>
-              {over
-                ? `Cannot be more than the ${formatINR(totalDue)} still due on the selected bills.`
-                : `Up to ${formatINR(totalDue)}. ${mode === "services" ? "Divided equally across" : "Paid oldest first over"} ${split.size} UPS code${split.size === 1 ? "" : "s"}.`}
-            </span>
+            {over && <span className="mt-1 block text-xs text-danger">Cannot be more than the {formatINR(totalDue)} still due.</span>}
           </Field>
           <Field label="Purpose (optional)">
-            <input name="purpose" maxLength={TEXT_MAX} placeholder={`Vendor payout · ${selected.map((p) => p.invoice_number).join(", ")}`} className={inputClass} />
-          </Field>
-          <Field label="Bank details">
             <input
-              name="bank_details"
+              name="purpose"
               maxLength={TEXT_MAX}
-              defaultValue={bank ? `${bank.bank_name} · ${bank.account_number} · ${bank.ifsc_code}` : ""}
-              key={vendorId}
-              placeholder="Bank · A/C · IFSC"
+              placeholder={selected.length ? `Vendor payout · ${selected.map((p) => p.invoice_number).join(", ")}` : undefined}
               className={inputClass}
             />
           </Field>
-        </div>
+          <Field label="Pay into">
+            <Select
+              value={bank}
+              onValueChange={setBank}
+              placeholder={accounts.length ? "Their bank account" : "No bank account on file"}
+              options={accounts}
+            />
+          </Field>
+        </>
       )}
 
-      {error && <p className="text-sm text-danger">⚠ {error}</p>}
-      <div className="flex justify-end gap-3 pt-1">
-        <Button type="button" variant="secondary" magnetic={false} onClick={onDone}>Cancel</Button>
-        <Button type="submit" magnetic={false} disabled={saving || selected.length === 0 || over || amount <= 0}>
-          {saving ? "Saving…" : `Request ${formatINR(selected.length ? amount : 0)}`}
+      {error && <p className="text-sm text-danger sm:col-span-2">⚠ {error}</p>}
+      <div className="flex justify-end gap-3 pt-1 sm:col-span-2">
+        <Button type="button" variant="secondary" magnetic={false} onClick={onDone}>
+          Cancel
+        </Button>
+        <Button type="submit" magnetic={false} disabled={saving || !vendorReady}>
+          {saving ? "Saving…" : `Request ${formatINR(vendorReady ? amount : 0)}`}
         </Button>
       </div>
     </form>
   );
 }
 
+/** Divide the payment equally across the UPS codes, or settle the oldest bill first. */
+function SplitChoice({ mode, onChange }: { mode: SplitMode; onChange: (mode: SplitMode) => void }) {
+  return (
+    <div role="radiogroup" aria-label="How to split this payment" className="flex flex-wrap gap-2 sm:col-span-2">
+      {SPLIT_MODES.map((m) => (
+        <button
+          key={m.key}
+          type="button"
+          role="radio"
+          aria-checked={mode === m.key}
+          onClick={() => onChange(m.key)}
+          className={
+            "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
+            (mode === m.key ? "border-foreground bg-foreground text-background" : "border-line text-secondary hover:text-foreground")
+          }
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** How much can still be paid on the chosen bills, and how the amount splits across their UPS codes. */
+function PaymentLimit({
+  totalDue,
+  split,
+  codeOf,
+  mode,
+}: {
+  totalDue: number;
+  split: Map<string, number>;
+  codeOf: Map<string, string>;
+  mode: SplitMode;
+}) {
+  return (
+    <div className="rounded-xl bg-mist/60 px-3 py-2 text-xs text-secondary sm:col-span-2">
+      <p>At most {formatINR(totalDue)} left to pay on these bills (after commission).</p>
+      {split.size > 0 && (
+        <p className="mt-1">
+          {mode === "services" ? "Divided equally across" : "Paid oldest bill first over"} {split.size} UPS code{split.size === 1 ? "" : "s"}:{" "}
+          {[...split].map(([key, value], i) => (
+            <span key={key}>
+              {i > 0 && ", "}
+              <span className="font-mono">{codeOf.get(key)}</span> {formatINR(value)}
+            </span>
+          ))}
+        </p>
+      )}
+    </div>
+  );
+}

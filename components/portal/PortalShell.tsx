@@ -23,6 +23,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Landmark,
+  Sparkles,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
 import { canAccessPath } from "@/lib/rbac";
@@ -31,6 +32,7 @@ import { Logo } from "@/components/ui/Logo";
 import { GridLoader } from "@/components/ui/GridLoader";
 import { GlobalSearch } from "@/components/portal/GlobalSearch";
 import { MoneyFab } from "@/components/portal/MoneyFab";
+import { AskO2Button } from "@/components/portal/assistant/AskO2Button";
 import { cn } from "@/lib/utils";
 
 const navGroups = [
@@ -40,6 +42,7 @@ const navGroups = [
       { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { href: "/portal/invoices", label: "Invoices", icon: FileText },
       { href: "/portal/reports", label: "Reports", icon: FileBarChart },
+      { href: "/portal/assistant", label: "Ask O2", icon: Sparkles },
     ],
   },
   {
@@ -75,11 +78,24 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-export function PortalShell({ children }: { children: ReactNode }) {
+/**
+ * ``bleed`` gives the page the whole area under the top bar (no padding, no width cap, no floating
+ * Record button), for full-screen tools such as Ask O2. ``startCollapsed`` opens the page with the
+ * menu folded to its icons; expanding it there is not saved, so other pages keep the user's choice.
+ */
+export function PortalShell({
+  children,
+  bleed = false,
+  startCollapsed = false,
+}: {
+  children: ReactNode;
+  bleed?: boolean;
+  startCollapsed?: boolean;
+}) {
   const { user, loading, logout } = useAuth();
   const pathname = usePathname();
   const router = useRouter();
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(startCollapsed);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/portal/login");
@@ -92,13 +108,14 @@ export function PortalShell({ children }: { children: ReactNode }) {
 
   // Persist collapse preference across navigation.
   useEffect(() => {
+    if (startCollapsed) return;
     setCollapsed(window.localStorage.getItem("o2_sidebar_collapsed") === "1");
-  }, []);
+  }, [startCollapsed]);
 
   const toggleCollapsed = () => {
     setCollapsed((c) => {
       const next = !c;
-      window.localStorage.setItem("o2_sidebar_collapsed", next ? "1" : "0");
+      if (!startCollapsed) window.localStorage.setItem("o2_sidebar_collapsed", next ? "1" : "0");
       return next;
     });
   };
@@ -206,7 +223,14 @@ export function PortalShell({ children }: { children: ReactNode }) {
         {/* Main */}
         <div className="min-w-0 flex-1">
           {/* Desktop top bar */}
-          <header className="sticky top-0 z-20 hidden items-center justify-end gap-3 border-b border-white/50 bg-white/35 px-10 py-4 backdrop-blur-2xl lg:flex">
+          <header
+            className={cn(
+              "sticky top-0 z-20 hidden items-center justify-end gap-3 border-b px-10 py-4 backdrop-blur-2xl lg:flex",
+              // Full-screen tools let their own background run up behind the bar, without a line.
+              bleed ? "border-transparent bg-white/20" : "border-white/50 bg-white/35",
+            )}
+          >
+            <AskO2Button />
             <GlobalSearch />
             {/* User — avatar only; opens a dropdown with name + sign out */}
             <div className="ml-1 border-l border-white/55 pl-4">
@@ -255,9 +279,12 @@ export function PortalShell({ children }: { children: ReactNode }) {
               <Logo size={26} rounded="rounded-lg" />
               <span className="text-sm font-medium">Project O2</span>
             </Link>
-            <button onClick={logout} className="text-sm text-secondary">
-              Sign out
-            </button>
+            <div className="flex items-center gap-3">
+              <AskO2Button compact />
+              <button onClick={logout} className="text-sm text-secondary">
+                Sign out
+              </button>
+            </div>
           </header>
 
           {/* Mobile nav scroller */}
@@ -280,6 +307,9 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </div>
 
           {/* Bottom padding keeps the last rows clear of the floating Record button. */}
+          {bleed ? (
+            <main>{children}</main>
+          ) : (
           <main className="px-5 pb-28 pt-8 md:px-10 md:pb-32 md:pt-12">
             <motion.div
               key={pathname}
@@ -291,9 +321,10 @@ export function PortalShell({ children }: { children: ReactNode }) {
               {children}
             </motion.div>
           </main>
+          )}
         </div>
       </div>
-      <MoneyFab />
+      {!bleed && <MoneyFab />}
     </div>
   );
 }

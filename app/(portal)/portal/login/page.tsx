@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/ui/Logo";
 import { Field, inputClass } from "@/components/portal/ui";
 import { ApiError } from "@/lib/api";
+import { PasswordInput } from "@/components/portal/PasswordInput";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -72,12 +73,11 @@ export default function LoginPage() {
             />
           </Field>
           <Field label="Password">
-            <input
-              type="password"
+            <PasswordInput
               required
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className={inputClass}
             />
           </Field>
 
