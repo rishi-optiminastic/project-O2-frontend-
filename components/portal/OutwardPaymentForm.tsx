@@ -20,8 +20,8 @@ const ALL_BILLS = "all";
  * Record an outward payment for CEO sign-off.
  *
  * To a vendor: pick the vendor and the bill being paid, or all their bills still due. The
- * amount cannot be more than those bills still owe (after Optiminastic's commission) and is
- * split equally across every UPS code on them, as the hint shows. "Someone else" is for
+ * amount cannot be more than those bills still owe (after Optiminastic's commission). It is
+ * divided equally across every UPS code on them, or paid oldest bill first, as the hint shows. "Someone else" is for
  * money out that is not a vendor bill.
  */
 export function OutwardPaymentForm({
@@ -66,6 +66,30 @@ function splitEqually(amount: number, dues: { key: string; due: number }[]): Map
   return new Map([...given].map(([k, p]) => [k, p / 100]));
 }
 
+/** The server's "oldest" split: the oldest bill first (by date, then id), each line in turn. */
+function splitOldestFirst(amount: number, bills: VendorPayable[]): Map<string, number> {
+  let remaining = Math.round(amount * 100);
+  const given = new Map<string, number>();
+  const ordered = [...bills].sort((a, b) => a.invoice_date.localeCompare(b.invoice_date) || a.invoice_id - b.invoice_id);
+  for (const bill of ordered) {
+    for (const line of bill.lines) {
+      if (remaining <= 0) return given;
+      const take = Math.min(remaining, Math.max(Math.round(line.due * 100), 0));
+      if (take > 0) {
+        given.set(`${bill.invoice_id}:${line.line_id}`, take / 100);
+        remaining -= take;
+      }
+    }
+  }
+  return given;
+}
+
+type SplitMode = "services" | "oldest";
+const SPLIT_MODES: { key: SplitMode; label: string }[] = [
+  { key: "services", label: "Divide equally across all services" },
+  { key: "oldest", label: "Oldest bill first" },
+];
+
 function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; onDone: () => void }) {
   const { data: vendors } = useApi<Vendor[]>("/vendors");
   const [payee, setPayee] = useState<string | undefined>(initialVendorId ? String(initialVendorId) : undefined);
@@ -74,6 +98,7 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
   const [bill, setBill] = useState<string>(ALL_BILLS);
   const [bank, setBank] = useState<string | undefined>(undefined);
   const [amountInput, setAmountInput] = useState("");
+  const [mode, setMode] = useState<SplitMode>("services");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -88,8 +113,10 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
     () =>
       !isVendor || over || amount <= 0
         ? new Map<string, number>()
-        : splitEqually(amount, selected.flatMap((p) => p.lines.map((l) => ({ key: `${p.invoice_id}:${l.line_id}`, due: l.due })))),
-    [amount, isVendor, over, selected],
+        : mode === "oldest"
+          ? splitOldestFirst(amount, selected)
+          : splitEqually(amount, selected.flatMap((p) => p.lines.map((l) => ({ key: `${p.invoice_id}:${l.line_id}`, due: l.due })))),
+    [amount, isVendor, over, selected, mode],
   );
   const codeOf = new Map(selected.flatMap((p) => p.lines.map((l) => [`${p.invoice_id}:${l.line_id}`, l.code ?? p.invoice_number])));
   const accounts = (vendor?.bank_accounts ?? []).map((a) => ({
@@ -117,6 +144,7 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
           vendor_id: Number(payee),
           vendor_invoice_ids: selected.map((p) => p.invoice_id),
           amount,
+          split: mode,
           purpose: fd.get("purpose") || null,
           bank_details: bank ?? null,
         });
@@ -183,7 +211,10 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
           ⚠ Nothing is due to {vendor?.business_name ?? "this vendor"}: every bill is paid or already in a payout.
         </p>
       ) : (
-        <PaymentLimit totalDue={totalDue} split={split} codeOf={codeOf} />
+        <>
+          <SplitChoice mode={mode} onChange={setMode} />
+          <PaymentLimit totalDue={totalDue} split={split} codeOf={codeOf} mode={mode} />
+        </>
       ))}
 
       {(!isVendor || due.length > 0) && (
@@ -243,14 +274,47 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
   );
 }
 
+/** Divide the payment equally across the UPS codes, or settle the oldest bill first. */
+function SplitChoice({ mode, onChange }: { mode: SplitMode; onChange: (mode: SplitMode) => void }) {
+  return (
+    <div role="radiogroup" aria-label="How to split this payment" className="flex flex-wrap gap-2 sm:col-span-2">
+      {SPLIT_MODES.map((m) => (
+        <button
+          key={m.key}
+          type="button"
+          role="radio"
+          aria-checked={mode === m.key}
+          onClick={() => onChange(m.key)}
+          className={
+            "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors " +
+            (mode === m.key ? "border-foreground bg-foreground text-background" : "border-line text-secondary hover:text-foreground")
+          }
+        >
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 /** How much can still be paid on the chosen bills, and how the amount splits across their UPS codes. */
-function PaymentLimit({ totalDue, split, codeOf }: { totalDue: number; split: Map<string, number>; codeOf: Map<string, string> }) {
+function PaymentLimit({
+  totalDue,
+  split,
+  codeOf,
+  mode,
+}: {
+  totalDue: number;
+  split: Map<string, number>;
+  codeOf: Map<string, string>;
+  mode: SplitMode;
+}) {
   return (
     <div className="rounded-xl bg-mist/60 px-3 py-2 text-xs text-secondary sm:col-span-2">
       <p>At most {formatINR(totalDue)} left to pay on these bills (after commission).</p>
       {split.size > 0 && (
         <p className="mt-1">
-          Split equally across {split.size} UPS code{split.size === 1 ? "" : "s"}:{" "}
+          {mode === "services" ? "Divided equally across" : "Paid oldest bill first over"} {split.size} UPS code{split.size === 1 ? "" : "s"}:{" "}
           {[...split].map(([key, value], i) => (
             <span key={key}>
               {i > 0 && ", "}

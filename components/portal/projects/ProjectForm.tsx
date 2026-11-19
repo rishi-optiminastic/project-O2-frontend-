@@ -20,6 +20,8 @@ type FormState = {
   client_id: string;
   service_ids: number[];
   contract_value: string;
+  /** What the company plans to spend on vendors; 0 or blank = not set. */
+  budget: string;
   /** YYYY-MM */
   start_month: string;
 };
@@ -30,6 +32,7 @@ function initialState(project?: ProjectDetail): FormState {
     client_id: project?.client_id ? String(project.client_id) : "",
     service_ids: project?.services.map((s) => s.id) ?? [],
     contract_value: project ? String(project.contract_value) : "",
+    budget: project && project.budget ? String(project.budget) : "",
     start_month: (project?.start_date ?? indiaToday()).slice(0, 7),
   };
 }
@@ -111,6 +114,7 @@ export function ProjectForm({
       client_id: Number(form.client_id),
       service_ids: form.service_ids,
       contract_value: num(form.contract_value),
+      budget: num(form.budget),
       start_date: form.start_month ? `${form.start_month}-01` : null,
     };
     try {
@@ -201,6 +205,15 @@ export function ProjectForm({
             value={form.contract_value}
             onChange={(e) => set("contract_value", e.target.value)}
             placeholder="Fee agreed with the client"
+            className={inputClass}
+          />
+        </Field>
+        <Field label="Vendor budget (₹, before GST)">
+          <input
+            {...NUMBER_RULES.money}
+            value={form.budget}
+            onChange={(e) => set("budget", e.target.value)}
+            placeholder="Planned spend on vendors"
             className={inputClass}
           />
         </Field>

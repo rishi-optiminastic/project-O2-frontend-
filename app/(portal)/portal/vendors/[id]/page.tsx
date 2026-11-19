@@ -25,7 +25,7 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
-import { api, ApiError, type Vendor, type VendorAssignment, type VendorInvoice, type Project } from "@/lib/api";
+import { api, ApiError, type Vendor, type VendorAssignment, type VendorInvoice, type Project, TDS_SECTIONS } from "@/lib/api";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { Tabs } from "@/components/portal/Tabs";
 import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
@@ -173,15 +173,59 @@ export default function VendorDetailPage() {
           <MetricCard label="Onboarding" value={vendor?.is_verified ? "Verified" : "Pending"} sub={vendor ? formatDate(vendor.created_at) : ""} spark={[3, 5, 4, 6, 5, 7, 6, 8, vendor?.is_verified ? 10 : 5]} />
         </motion.div>
 
-        {/* Tax + bank + compliance */}
+        {/* Who the vendor is and how to reach them */}
+        <motion.div variants={fadeUp}>
+          <Panel>
+            <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">General information</h2>
+            <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
+              <DataField label="Business name" value={vendor?.business_name} />
+              <DataField label="Registered legal name" value={vendor?.legal_name || (vendor ? "Same as business name" : null)} />
+              <DataField label="Contact person" value={vendor?.contact_person || (vendor ? "—" : null)} />
+              <DataField label="Email" value={vendor?.email} />
+              <DataField label="Phone" value={vendor?.phone || (vendor ? "—" : null)} />
+              <DataField label="Vendor type" value={vendor ? (vendor.is_group_company ? "Group company" : "External vendor") : null} />
+              <DataField
+                label="Approval status"
+                value={vendor ? <StatusPill status={vendor.is_verified ? "Verified" : vendor.approval_status} /> : null}
+              />
+              <DataField label="Onboarded" value={vendor ? formatDate(vendor.created_at) : null} />
+              <DataField label="Address" value={vendor?.address || (vendor ? "—" : null)} className="sm:col-span-2" />
+              <DataField
+                label="Primary bank account"
+                value={
+                  vendor
+                    ? vendor.bank_accounts[0]
+                      ? `${vendor.bank_accounts[0].bank_name} · ${vendor.bank_accounts[0].account_number}${vendor.bank_accounts.length > 1 ? ` (+${vendor.bank_accounts.length - 1} more)` : ""}`
+                      : "None yet"
+                    : null
+                }
+              />
+              <DataField
+                label="Services provided"
+                value={vendor ? (vendor.services.length ? `${vendor.services.length} service${vendor.services.length === 1 ? "" : "s"}` : "None yet") : null}
+              />
+            </div>
+          </Panel>
+        </motion.div>
+
+        {/* Tax, registration and the terms on its bills */}
         <motion.div variants={fadeUp}>
           <Panel>
             <h2 className="mb-5 text-sm font-medium tracking-eyebrow text-secondary">Tax &amp; registration</h2>
             <div className="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-2 lg:grid-cols-4">
               <DataField label="GST number" value={vendor?.gst_number} mono />
               <DataField label="PAN" value={vendor?.pan} mono />
-              <DataField label="MSME (Udyam)" value={vendor?.msme_number ?? (vendor ? "Not registered" : null)} mono={!!vendor?.msme_number} />
-              <DataField label="COI" value={vendor?.coi} mono />
+              <DataField
+                label="MSME"
+                value={vendor ? (vendor.msme ? `Yes${vendor.msme_number ? ` · ${vendor.msme_number}` : ""}` : "No") : null}
+                mono={!!vendor?.msme_number}
+              />
+              <DataField label="COI" value={vendor?.coi || (vendor ? "—" : null)} mono />
+              <DataField
+                label="TDS section on bills"
+                value={vendor ? (TDS_SECTIONS.find((t) => t.key === vendor.default_tds_section) ?? TDS_SECTIONS[0]).label + ` (${(TDS_SECTIONS.find((t) => t.key === vendor.default_tds_section) ?? TDS_SECTIONS[0]).rate}%)` : null}
+              />
+              <DataField label="Percentage (rate) · commission" value={vendor ? `${vendor.commission_rate ?? 0}%` : null} />
             </div>
           </Panel>
         </motion.div>

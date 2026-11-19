@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { formatINR } from "@/lib/utils";
 import { api, ApiError, type Vendor, type VendorAssignment, TDS_SECTIONS } from "@/lib/api";
-import { FIELD_RULES, GST_RATE_OPTIONS, NUMBER_RULES, indiaToday, pastDateRule } from "@/lib/validation";
+import { FIELD_RULES, GST_RATE_OPTIONS, NAME_MAX, NUMBER_RULES, TEXT_MAX, indiaToday, pastDateRule } from "@/lib/validation";
+import { GstField } from "@/components/portal/GstField";
 
 /**
  * Record a vendor's bill against the vendor's UPS codes (unique project service codes).
@@ -137,6 +138,11 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
         is_interstate: interstate,
         tds_section: section,
         commission_rate: Number(commissionRate || 0),
+        // The supplier as printed on the bill; blank ones fall back to the vendor's details.
+        supplier_gstin: String(fd.get("gst_number") ?? "").trim() || null,
+        supplier_name: String(fd.get("business_name") ?? "").trim() || null,
+        supplier_address: String(fd.get("address") ?? "").trim() || null,
+        supplier_coi: String(fd.get("coi") ?? "").trim() || null,
       });
       if (file) {
         try {
@@ -173,6 +179,30 @@ function InvoiceFields({ vendor, onCancel, onSaved }: { vendor: Vendor; onCancel
 
   return (
     <form onSubmit={onSubmit} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      {/* Supplier on the bill: the GSTIN is checked with the GST registry and refreshes the name and address. */}
+      <GstField label="GSTIN number" defaultValue={vendor.gst_number} required overwrite />
+      <Field label="COI">
+        <input name="coi" {...FIELD_RULES.cin} defaultValue={vendor.coi ?? ""} placeholder="CIN or LLPIN" className={`${inputClass} font-mono`} />
+      </Field>
+      <div className="sm:col-span-2">
+        <Field label="Business name">
+          <input name="business_name" required maxLength={NAME_MAX} defaultValue={vendor.business_name} className={inputClass} />
+        </Field>
+      </div>
+      <div className="sm:col-span-2">
+        <Field label="Address">
+          <textarea
+            name="address"
+            required
+            rows={2}
+            maxLength={TEXT_MAX}
+            defaultValue={vendor.address ?? ""}
+            placeholder="Filled from the GSTIN when verified"
+            className={`${inputClass} h-auto py-2.5`}
+          />
+        </Field>
+      </div>
+
       <Field label="Invoice number">
         <input name="invoice_number" required {...FIELD_RULES.invoiceNumber} className={inputClass} />
       </Field>

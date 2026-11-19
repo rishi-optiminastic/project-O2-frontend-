@@ -38,10 +38,13 @@ export function GstField({
   label = "GST number",
   defaultValue,
   required = false,
+  overwrite = false,
 }: {
   label?: string;
   defaultValue?: string | null;
   required?: boolean;
+  /** Fill the fields even when they already hold text (e.g. prefilled details being re-checked). */
+  overwrite?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -55,7 +58,7 @@ export function GstField({
       const el = form.elements.namedItem(name);
       if (!(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) continue;
       const value = pick(r);
-      if (value && !el.value.trim()) {
+      if (value && (overwrite || !el.value.trim())) {
         el.value = value;
         // Nudge any listeners (kept uncontrolled, but harmless + future-proof).
         el.dispatchEvent(new Event("input", { bubbles: true }));

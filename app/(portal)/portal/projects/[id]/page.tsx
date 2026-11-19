@@ -142,15 +142,41 @@ export default function ProjectDetailPage() {
       }
     />
   );
-  const marginCard = <MetricCard label="Margin" value={formatINR(project?.margin ?? 0)} sub="Billed minus vendor invoices" />;
+  // Margin counts vendor bills only once recorded; until then, show what the agreed vendor costs would leave.
+  const vendorBillsPending = (project?.committed_cost ?? 0) > (project?.invoiced_cost ?? 0);
+  const expectedMargin = (project?.billed ?? 0) - Math.max(project?.committed_cost ?? 0, project?.invoiced_cost ?? 0);
+  const marginCard = (
+    <MetricCard
+      label="Margin"
+      value={formatINR(project?.margin ?? 0)}
+      sub={
+        !project
+          ? "Billed minus vendor invoices"
+          : project.invoiced_cost === 0 && project.committed_cost > 0
+            ? `No vendor bills yet · ${formatINR(expectedMargin)} after the ${formatINR(project.committed_cost)} agreed with vendors`
+            : vendorBillsPending
+              ? `Billed minus vendor invoices · ${formatINR(expectedMargin)} once all agreed vendor costs are billed`
+              : "Billed minus vendor invoices"
+      }
+    />
+  );
   const invoicedByVendorsCard = (
     <MetricCard label="Invoiced by vendors" value={formatINR(project?.invoiced_cost ?? 0)} sub="Before GST" />
   );
+  // With no vendor budget set (0), "budget left" would read as minus what is committed. Say it is not set instead.
+  const hasBudget = (project?.budget ?? 0) > 0;
+  const vendorCount = `${project?.vendors.length ?? 0} vendor${project?.vendors.length === 1 ? "" : "s"} assigned`;
   const budgetLeftCard = (
     <MetricCard
       label="Budget left"
-      value={formatINR(project?.remaining_budget ?? 0)}
-      sub={`${project?.vendors.length ?? 0} vendor${project?.vendors.length === 1 ? "" : "s"} assigned`}
+      value={hasBudget ? formatINR(project?.remaining_budget ?? 0) : "Not set"}
+      sub={
+        !hasBudget
+          ? `No vendor budget set · ${formatINR(project?.committed_cost ?? 0)} committed`
+          : project?.over_budget
+            ? `⚠ Over budget by ${formatINR(-(project?.remaining_budget ?? 0))} · ${vendorCount}`
+            : vendorCount
+      }
     />
   );
 
@@ -290,11 +316,15 @@ export default function ProjectDetailPage() {
         {tab === "vendors" && (
           <>
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard label="Vendor budget" value={formatINR(project?.budget ?? 0)} sub="Planned vendor spend" />
+              <MetricCard
+                label="Vendor budget"
+                value={hasBudget ? formatINR(project?.budget ?? 0) : "Not set"}
+                sub={hasBudget ? "Planned vendor spend" : "Set it with Edit or Scope & budget"}
+              />
               <MetricCard
                 label="Committed to vendors"
                 value={formatINR(project?.committed_cost ?? 0)}
-                sub={project?.over_budget ? `⚠ ${usedPercent}% of budget: over` : `${usedPercent}% of budget`}
+                sub={!hasBudget ? "No budget to compare against" : project?.over_budget ? `⚠ ${usedPercent}% of budget: over` : `${usedPercent}% of budget`}
               />
               {invoicedByVendorsCard}
               {budgetLeftCard}
