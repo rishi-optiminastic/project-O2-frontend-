@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Logo } from "@/components/ui/Logo";
 import { Field, inputClass } from "@/components/portal/ui";
 import { api, ApiError, isWorkspaceEmail, WORKSPACE_EMAIL_DOMAIN, type SignupAvailability } from "@/lib/api";
+import { PasswordInput } from "@/components/portal/PasswordInput";
 
 export default function SignupPage() {
   const { signup } = useAuth();
@@ -137,14 +138,13 @@ export default function SignupPage() {
                 </span>
               </Field>
               <Field label="Password">
-                <input
-                  type="password"
+                <PasswordInput
                   required
+                  autoComplete="new-password"
                   minLength={8}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="At least 8 characters"
-                  className={inputClass}
                 />
               </Field>
 

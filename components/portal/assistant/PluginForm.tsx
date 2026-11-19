@@ -7,6 +7,7 @@ import { Select } from "@/components/portal/Select";
 import { Field, inputClass } from "@/components/portal/ui";
 import { Button } from "@/components/ui/Button";
 import { api, ApiError, type AssistantPluginAuthType, type AssistantPluginDirectoryEntry } from "@/lib/api";
+import { PasswordInput } from "@/components/portal/PasswordInput";
 
 const AUTH_OPTIONS: { value: AssistantPluginAuthType; label: string }[] = [
   { value: "bearer", label: "API key (Bearer token)" },
@@ -104,7 +105,7 @@ export function PluginForm({
 
         {auth === "bearer" && (
           <Field label="API key">
-            <input name="token" required type="password" autoComplete="off" className={`${inputClass} font-mono`} />
+            <PasswordInput name="token" required autoComplete="off" className="font-mono" />
           </Field>
         )}
         {auth === "basic" && (
@@ -113,7 +114,7 @@ export function PluginForm({
               <input name="username" required autoComplete="off" className={`${inputClass} font-mono`} />
             </Field>
             <Field label="Key secret">
-              <input name="password" required type="password" autoComplete="off" className={`${inputClass} font-mono`} />
+              <PasswordInput name="password" required autoComplete="off" className="font-mono" />
             </Field>
           </div>
         )}
@@ -123,7 +124,7 @@ export function PluginForm({
               <input name="header_name" required pattern="[A-Za-z0-9-]{1,64}" placeholder="X-API-Key" className={`${inputClass} font-mono`} />
             </Field>
             <Field label="Header value">
-              <input name="header_value" required type="password" autoComplete="off" className={`${inputClass} font-mono`} />
+              <PasswordInput name="header_value" required autoComplete="off" className="font-mono" />
             </Field>
           </div>
         )}
