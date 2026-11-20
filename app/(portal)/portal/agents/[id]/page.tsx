@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
 import { api, ApiError, type Agent, type Client, type Invoice } from "@/lib/api";
-import { documentDate } from "@/lib/invoice";
+import { documentDate, invoiceTotals, taxSplit } from "@/lib/invoice";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { useMonth, withMonth } from "@/lib/month";
 import { FIELD_RULES, NAME_MAX, NUMBER_RULES, TEXT_MAX } from "@/lib/validation";
@@ -113,7 +113,7 @@ export default function AgentDetailPage() {
         <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           <MetricCard label="Clients introduced" value={clients.length} sub="Referred businesses" spark={clients.map((_, i) => i + 1).slice(-9)} />
           <MetricCard label="Invoices" value={rows.length} sub="Raised for their clients" spark={rows.map((i) => i.total_amount).slice(-9)} />
-          <MetricCard label="Total invoiced" value={formatINR(totalInvoiced)} sub="Gross billed" spark={rows.map((i) => i.total_amount).slice(-9)} />
+          <MetricCard label="Total invoiced" value={formatINR(totalInvoiced)} sub={taxSplit(invoiceTotals(rows).taxable, invoiceTotals(rows).gst)} spark={rows.map((i) => i.total_amount).slice(-9)} />
           <MetricCard label="Commission earned" value={formatINR(commission)} sub={`At ${agent?.commission_rate ?? 0}% of taxable`} spark={rows.map((i) => i.taxable_value).slice(-9)} />
         </motion.div>
 

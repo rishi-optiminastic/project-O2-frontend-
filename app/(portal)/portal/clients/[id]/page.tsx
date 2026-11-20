@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
 import { api, ApiError, type Client, type Invoice, type Agent, type AgentOption } from "@/lib/api";
-import { documentDate, documentKind } from "@/lib/invoice";
+import { documentDate, documentKind, invoiceTotals, taxSplit } from "@/lib/invoice";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { Tabs } from "@/components/portal/Tabs";
 import { useMonth, withMonth } from "@/lib/month";
@@ -130,7 +130,7 @@ export default function ClientDetailPage() {
           <>
             {/* Taxation + receivables KPIs */}
             <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard label="Total billed" value={formatINR(totalBilled)} sub={`${rows.length} invoices`} spark={rows.map((i) => i.total_amount).slice(-9)} />
+              <MetricCard label="Total billed" value={formatINR(totalBilled)} sub={`${taxSplit(invoiceTotals(rows).taxable, invoiceTotals(rows).gst)} · ${rows.length} invoice${rows.length === 1 ? "" : "s"}`} spark={rows.map((i) => i.total_amount).slice(-9)} />
               <MetricCard label="Received" value={formatINR(received)} sub="Settled to date" spark={rows.map((i) => i.amount_received).slice(-9)} />
               <MetricCard label="Outstanding" value={formatINR(pending)} sub="Pending collection" spark={rows.map((i) => i.amount_pending).slice(-9)} />
               <MetricCard label="GST charged" value={formatINR(gst)} sub={`TDS receivable ${formatINR(tds)}`} spark={rows.map((i) => i.gst_amount).slice(-9)} />

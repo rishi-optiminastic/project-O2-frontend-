@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Lock, Copy, Search, X, FileText, Upload } from "lucide-react";
-import { Table, Row, Cell, Empty, Field, inputClass, StatusPill } from "@/components/portal/ui";
+import { Table, Row, Cell, Empty, Field, MetricCard, inputClass, StatusPill } from "@/components/portal/ui";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Select } from "@/components/portal/Select";
 import { Button } from "@/components/ui/Button";
@@ -21,7 +21,7 @@ import {
   type LineDrafts,
 } from "@/components/portal/invoices/InvoiceLines";
 import { formatINR } from "@/lib/utils";
-import { monthEndISO, monthStartISO } from "@/lib/invoice";
+import { invoiceTotals, monthEndISO, monthStartISO, taxSplit } from "@/lib/invoice";
 import { NUMBER_RULES, futureDateRule, indiaToday } from "@/lib/validation";
 import { useMonth, withMonth } from "@/lib/month";
 
@@ -68,6 +68,8 @@ export function OverviewTab({ kind }: { kind: ClientInvoiceKind }) {
   // A proforma becomes a tax invoice when it is issued, so it moves from one list to the other.
   const data = useMemo(() => all?.filter((i) => i.is_issued === !isProforma), [all, isProforma]);
   const noun = isProforma ? "proforma" : "tax invoice";
+  // Totals of exactly the invoices listed (same month and filters).
+  const totals = invoiceTotals(data ?? []);
 
   const clientName = (id: number) => clients?.find((c) => c.id === id)?.business_name ?? `Client #${id}`;
 
@@ -90,6 +92,20 @@ export function OverviewTab({ kind }: { kind: ClientInvoiceKind }) {
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <MetricCard
+          label="Total invoice value"
+          tone="info"
+          value={loading && !data ? "—" : formatINR(totals.total)}
+          sub={isProforma ? `${taxSplit(totals.taxable, totals.gst)} (GST charged once issued)` : taxSplit(totals.taxable, totals.gst)}
+        />
+        <MetricCard
+          label={isProforma ? "Proformas" : "Tax invoices"}
+          value={loading && !data ? "—" : String(data?.length ?? 0)}
+          sub={isProforma ? "Awaiting approval or issue" : "Issued to clients"}
+        />
+      </div>
+
       {/* Toolbar: search + primary action on top, filters below */}
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

@@ -25,6 +25,7 @@ import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { fadeUp, stagger } from "@/lib/motion";
 import { formatINR, formatDate } from "@/lib/utils";
+import { taxSplit } from "@/lib/invoice";
 import { api, ApiError, type Vendor, type VendorAssignment, type VendorInvoice, type Project, TDS_SECTIONS } from "@/lib/api";
 import { MonthFilter } from "@/components/portal/MonthFilter";
 import { Tabs } from "@/components/portal/Tabs";
@@ -176,7 +177,14 @@ export default function VendorDetailPage() {
         {section === "overview" && (
           <>
         {/* KPIs */}
-        <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <motion.div variants={fadeUp} className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+          {/* The vendor's bills: amount plus GST, with the split underneath. */}
+          <MetricCard
+            label="Total invoice value"
+            value={formatINR(invoices.reduce((s, i) => s + i.invoice_amount + i.gst_amount, 0))}
+            sub={taxSplit(invoices.reduce((s, i) => s + i.invoice_amount, 0), invoices.reduce((s, i) => s + i.gst_amount, 0))}
+            spark={invoices.map((i) => i.invoice_amount + i.gst_amount).slice(-9)}
+          />
           <MetricCard label="Net payable" value={formatINR(payable)} sub={`${invoices.length} invoices`} spark={invoices.map((i) => i.net_payable).slice(-9)} />
           <MetricCard label="TDS deducted" value={formatINR(tds)} sub="Withheld at source" spark={invoices.map((i) => i.tds_amount).slice(-9)} />
           <MetricCard label="Contracted" value={formatINR(contracted)} sub={`${assignments.length} service${assignments.length === 1 ? "" : "s"} on ${projectCount} project${projectCount === 1 ? "" : "s"}`} spark={assignments.map((a) => a.agreed_cost).slice(-9)} />

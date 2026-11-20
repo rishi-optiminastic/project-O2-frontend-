@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { formatDate, formatINR } from "@/lib/utils";
+import { taxSplit } from "@/lib/invoice";
 import { api, ApiError, type ProjectDetail, type ProjectVendor, type WorkOrderSent } from "@/lib/api";
 
 type ProjectTab = "overview" | "client" | "vendors" | "margin";
@@ -128,7 +129,14 @@ export default function ProjectDetailPage() {
       sub="Agreed with the client, before GST"
     />
   );
-  const billedCard = <MetricCard label="Billed" value={formatINR(project?.billed ?? 0)} sub="Invoices raised, before GST" />;
+  // Total invoice value including GST, with the taxable part (what margin and the contract use) underneath.
+  const billedCard = (
+    <MetricCard
+      label="Total invoice value"
+      value={formatINR((project?.billed ?? 0) + (project?.billed_gst ?? 0))}
+      sub={taxSplit(project?.billed ?? 0, project?.billed_gst ?? 0)}
+    />
+  );
   const leftToBillCard = (
     <MetricCard
       label="Left to bill"
@@ -165,6 +173,8 @@ export default function ProjectDetailPage() {
   );
   // With no vendor budget set (0), "budget left" would read as minus what is committed. Say it is not set instead.
   const hasBudget = (project?.budget ?? 0) > 0;
+  // Every rupee of the vendor budget is committed: nothing more can be assigned.
+  const fullyAllocated = hasBudget && (project?.committed_cost ?? 0) >= (project?.budget ?? 0) - 0.005;
   const vendorCount = `${project?.vendors.length ?? 0} vendor${project?.vendors.length === 1 ? "" : "s"} assigned`;
   const budgetLeftCard = (
     <MetricCard
@@ -175,7 +185,9 @@ export default function ProjectDetailPage() {
           ? `No vendor budget set · ${formatINR(project?.committed_cost ?? 0)} committed`
           : project?.over_budget
             ? `⚠ Over budget by ${formatINR(-(project?.remaining_budget ?? 0))} · ${vendorCount}`
-            : vendorCount
+            : fullyAllocated
+              ? `100% allocated · no more vendors can be assigned`
+              : vendorCount
       }
     />
   );
@@ -337,7 +349,14 @@ export default function ProjectDetailPage() {
                     <Button size="sm" variant="secondary" magnetic={false} onClick={() => setVendorsOpen(true)}>
                       <FileText className="h-4 w-4" /> Scope &amp; budget
                     </Button>
-                    <Button size="sm" magnetic={false} onClick={() => setAssigning(true)}>
+                    {/* Once the vendor budget is 100% allocated, no more vendors can be assigned. */}
+                    <Button
+                      size="sm"
+                      magnetic={false}
+                      onClick={() => setAssigning(true)}
+                      disabled={fullyAllocated}
+                      title={fullyAllocated ? "The vendor budget is 100% allocated. Raise it under Scope & budget to assign more." : undefined}
+                    >
                       <Plus className="h-4 w-4" /> Assign vendors
                     </Button>
                   </div>

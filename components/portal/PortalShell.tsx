@@ -24,6 +24,7 @@ import {
   PanelLeftOpen,
   Landmark,
   Sparkles,
+  Wallet,
 } from "lucide-react";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
 import { canAccessPath } from "@/lib/rbac";
@@ -41,6 +42,7 @@ const navGroups = [
     items: [
       { href: "/portal", label: "Dashboard", icon: LayoutDashboard, exact: true },
       { href: "/portal/invoices", label: "Invoices", icon: FileText },
+      { href: "/portal/cash", label: "Cash", icon: Wallet },
       { href: "/portal/reports", label: "Reports", icon: FileBarChart },
       { href: "/portal/assistant", label: "Ask O2", icon: Sparkles },
     ],

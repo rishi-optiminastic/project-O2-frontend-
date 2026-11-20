@@ -666,6 +666,8 @@ export interface Project {
   contract_value: number;
   /** Taxable value of the project's invoices that are not cancelled. */
   billed: number;
+  /** GST on those invoices: billed + billed_gst is the total invoice value. */
+  billed_gst?: number;
   /** Null when no contract value is set. */
   left_to_bill: number | null;
   over_contract: boolean;
@@ -1062,4 +1064,39 @@ export interface AssistantCommand {
   name: string;
   description: string;
   prompt: string;
+}
+
+/** A UPS code cash can be recorded against. */
+export interface UpsCode {
+  id: number;
+  code: string;
+  project_id: number;
+  project_code: string;
+  project_title: string;
+  service_title: string;
+  vendor_name: string;
+}
+
+/** Cash received (IN) or paid out to an agent (OUT), divided equally over UPS codes. */
+export interface CashEntry {
+  id: number;
+  direction: "IN" | "OUT";
+  entry_date: string;
+  amount: number;
+  agent_id: number | null;
+  agent_name: string | null;
+  note: string | null;
+  lines: { assignment_id: number; code: string; amount: number }[];
+  created_at: string;
+}
+
+/** One month of the Cash overview. */
+export interface CashMonth {
+  month: string;
+  invoice_taxable: number;
+  invoice_gst: number;
+  invoice_total: number;
+  invoice_count: number;
+  cash_received: number;
+  cash_paid: number;
 }

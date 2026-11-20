@@ -9,6 +9,7 @@ import { PageHeading, Panel, Table, Row, Cell, MetricCard } from "@/components/p
 import { Button } from "@/components/ui/Button";
 import { api, ApiError, type BulkPreview, type BulkCreated, type BulkRow } from "@/lib/api";
 import { formatDate, formatINR } from "@/lib/utils";
+import { taxSplit } from "@/lib/invoice";
 
 type Stage =
   | { kind: "pick" }
@@ -143,7 +144,7 @@ function PreviewSection({
         <MetricCard label="Invoices" value={String(preview.invoice_count)} sub={`${preview.client_count} client${preview.client_count === 1 ? "" : "s"}`} />
         <MetricCard label="Value before GST" value={formatINR(preview.taxable_total)} sub="Taxable value" />
         <MetricCard label="GST" value={formatINR(preview.gst_total)} sub="From each service's rate" />
-        <MetricCard label="Total billed" value={formatINR(preview.grand_total)} sub="Including GST" />
+        <MetricCard label="Total billed" value={formatINR(preview.grand_total)} sub={taxSplit(preview.taxable_total, preview.gst_total)} />
       </div>
 
       {preview.ready ? (

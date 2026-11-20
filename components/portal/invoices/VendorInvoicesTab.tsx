@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/lib/auth";
 import { formatINR, formatDate } from "@/lib/utils";
+import { taxSplit } from "@/lib/invoice";
 import type { Approval, Project, Vendor, VendorInvoice } from "@/lib/api";
 import { useMonth, withMonth } from "@/lib/month";
 import { PORTAL_EVENTS, usePortalEvent } from "@/lib/events";
@@ -53,9 +54,14 @@ export function VendorInvoicesTab() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Billed before GST" tone="info" value={loading ? "—" : formatINR(total("invoice_amount"))} sub={`${rows.length} vendor invoice${rows.length === 1 ? "" : "s"}`} />
-        <MetricCard label="Input GST" tone="info" value={loading ? "—" : formatINR(total("gst_amount"))} sub="On these bills" />
+      <div className="grid gap-4 sm:grid-cols-3">
+        {/* Bill amount plus GST, with the split underneath (the GST is input credit). */}
+        <MetricCard
+          label="Total invoice value"
+          tone="info"
+          value={loading ? "—" : formatINR(total("invoice_amount") + total("gst_amount"))}
+          sub={`${taxSplit(total("invoice_amount"), total("gst_amount"))} · ${rows.length} bill${rows.length === 1 ? "" : "s"}`}
+        />
         <MetricCard label="TDS to deduct" tone="warning" value={loading ? "—" : formatINR(total("tds_amount"))} sub="Deposited from Taxation" />
         <MetricCard label="Paid to vendors" tone="success" value={loading ? "—" : formatINR(total("amount_payable"))} sub="Net payable less Optiminastic commission" />
       </div>

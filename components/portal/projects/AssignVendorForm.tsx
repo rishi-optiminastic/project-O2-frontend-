@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, X, CheckCircle2 } from "lucide-react";
+import { X, CheckCircle2 } from "lucide-react";
 import { Modal, ModalFooter } from "@/components/portal/Modal";
 import { Select } from "@/components/portal/Select";
 import { Field, inputClass } from "@/components/portal/ui";
@@ -119,17 +119,13 @@ export function AssignVendorsPanel({
   const committed = mapped.reduce((s, r) => s + num(r.cost), 0);
   const servicesMapped = project.services.filter((s) => mapped.some((r) => r.service_id === s.id)).length;
   const duplicate = mapped.find((r, i) => mapped.findIndex((x) => x.vendor_id === r.vendor_id && x.service_id === r.service_id) !== i);
+  // With a vendor budget set, the agreed costs may not go past it (the server refuses too).
+  // Lowering costs is always allowed, even on a project already over its budget.
+  const budgetValue = num(budget);
+  const overBudget = budgetValue > 0 && committed > budgetValue + 0.005 && committed > project.committed_cost + 0.005;
 
   function update(key: string, change: Partial<MapRow>) {
     setRows((all) => all.map((r) => (r.key === key ? { ...r, ...change } : r)));
-  }
-  function addRow(serviceId: number) {
-    setRows((all) => {
-      const at = all.map((r) => r.service_id).lastIndexOf(serviceId);
-      const next = [...all];
-      next.splice(at + 1, 0, { key: newKey(), service_id: serviceId, vendor_id: "", cost: "" });
-      return next;
-    });
   }
   function removeRow(key: string) {
     setRows((all) => {
@@ -173,9 +169,9 @@ export function AssignVendorsPanel({
         <legend className="mb-3 text-xs tracking-eyebrow text-secondary">Services</legend>
         <div className="flex flex-col gap-3">
           {project.services.map((service) => {
+            // One vendor per service: no "another vendor" row. Older projects may still show two.
             const serviceRows = rows.filter((r) => r.service_id === service.id);
             const options = providers(service.id);
-            const canAdd = options.length > 0 && !serviceRows.some((r) => r.locked);
             return (
               <div key={service.id} className="flex flex-col gap-3 rounded-2xl border border-line p-4">
                 {serviceRows.map((r, i) => (
@@ -190,15 +186,6 @@ export function AssignVendorsPanel({
                     onRemove={() => removeRow(r.key)}
                   />
                 ))}
-                {canAdd && (
-                  <button
-                    type="button"
-                    onClick={() => addRow(service.id)}
-                    className="flex w-fit items-center gap-1 text-xs text-secondary hover:text-foreground"
-                  >
-                    <Plus className="h-3 w-3" /> Another vendor for this service
-                  </button>
-                )}
               </div>
             );
           })}
@@ -222,6 +209,12 @@ export function AssignVendorsPanel({
         <input {...NUMBER_RULES.money} value={budget} onChange={(e) => setBudget(e.target.value)} className={inputClass} />
       </Field>
 
+      {overBudget && (
+        <p role="alert" className="col-span-full rounded-2xl border border-danger/30 bg-danger-soft p-3 text-sm text-danger">
+          These costs come to {formatINR(committed)}, over the {formatINR(budgetValue)} vendor budget. The budget is 100% allocated:
+          lower the agreed costs or raise the vendor budget.
+        </p>
+      )}
       {duplicate && (
         <p className="col-span-full text-sm text-danger">
           {vendorName(duplicate.vendor_id)} is chosen twice for {project.services.find((s) => s.id === duplicate.service_id)?.title}. Keep one row.
@@ -236,7 +229,7 @@ export function AssignVendorsPanel({
         <Button type="button" variant="secondary" magnetic={false} onClick={onClose}>
           {cancelLabel}
         </Button>
-        <Button type="submit" magnetic={false} disabled={saving || !!duplicate}>
+        <Button type="submit" magnetic={false} disabled={saving || !!duplicate || overBudget}>
           {saving ? "Saving…" : submitLabel}
         </Button>
       </ModalFooter>

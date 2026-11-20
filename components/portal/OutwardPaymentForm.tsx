@@ -188,7 +188,8 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
             }}
             options={[
               { value: ALL_BILLS, label: due.length ? `All bills still due (${due.length})` : "No bills due" },
-              ...due.map((p) => ({ value: String(p.invoice_id), label: `${p.invoice_number} · ${formatINR(p.due)} due` })),
+              // Each bill is named by the UPS codes it charges, then its bill number and what is still due.
+              ...due.map((p) => ({ value: String(p.invoice_id), label: `${upsCodes(p)} · Bill ${p.invoice_number} · ${formatINR(p.due)} due` })),
             ]}
           />
         </Field>
@@ -210,6 +211,7 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
         </p>
       ) : (
         <>
+          <DueByCode bills={selected} />
           <SplitChoice mode={mode} onChange={setMode} />
           <PaymentLimit totalDue={totalDue} split={split} codeOf={codeOf} mode={mode} />
         </>
@@ -257,6 +259,36 @@ function PaymentFields({ initialVendorId, onDone }: { initialVendorId?: number; 
         </Button>
       </div>
     </form>
+  );
+}
+
+/** The UPS codes a bill charges, for its label. */
+function upsCodes(bill: VendorPayable): string {
+  const codes = [...new Set(bill.lines.map((l) => l.code).filter(Boolean))];
+  return codes.length ? codes.join(", ") : "No UPS code";
+}
+
+/** What is still due on each UPS code of the chosen bills. */
+function DueByCode({ bills }: { bills: VendorPayable[] }) {
+  const rows = bills.flatMap((b) => b.lines.filter((l) => l.due > 0).map((l) => ({ key: `${b.invoice_id}:${l.line_id}`, code: l.code, bill: b.invoice_number, due: l.due })));
+  if (rows.length === 0) return null;
+  return (
+    <div className="overflow-hidden rounded-lg border border-line sm:col-span-2">
+      <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-line bg-ink-06 px-4 py-2 text-xs tracking-eyebrow text-secondary">
+        <span>UPS code</span>
+        <span>Bill</span>
+        <span className="text-right">Due</span>
+      </div>
+      <div className="max-h-48 overflow-y-auto" data-lenis-prevent>
+        {rows.map((r) => (
+          <div key={r.key} className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-line px-4 py-2 text-sm last:border-b-0">
+            <span className="font-mono text-xs">{r.code ?? "No UPS code"}</span>
+            <span className="text-secondary">{r.bill}</span>
+            <span className="text-right tabular-nums">{formatINR(r.due)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

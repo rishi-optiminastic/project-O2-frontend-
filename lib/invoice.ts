@@ -1,5 +1,6 @@
 import { indiaToday } from "@/lib/validation";
 import type { Invoice } from "@/lib/api";
+import { formatINR } from "@/lib/utils";
 
 /** The date that identifies the document: tax invoice date once issued, else the proforma date. */
 export function documentDate(inv: Pick<Invoice, "invoice_date" | "proforma_date" | "created_at">): string {
@@ -57,4 +58,17 @@ export function monthEndISO(today: Date = new Date()): string {
 /** The 1st of the current month in India as YYYY-MM-DD: the earliest a new proforma can be dated. */
 export function monthStartISO(): string {
   return `${indiaToday().slice(0, 8)}01`;
+}
+
+/** The caption under a total invoice value: what it is made of. */
+export function taxSplit(taxable: number, gst: number): string {
+  return `Taxable ${formatINR(taxable)} · GST ${formatINR(gst)}`;
+}
+
+/** Taxable value, GST and total of a list of invoices (anything with those amounts). */
+export function invoiceTotals(rows: { taxable_value: number; gst_amount: number; total_amount: number }[]) {
+  return rows.reduce(
+    (t, r) => ({ taxable: t.taxable + r.taxable_value, gst: t.gst + r.gst_amount, total: t.total + r.total_amount }),
+    { taxable: 0, gst: 0, total: 0 },
+  );
 }
